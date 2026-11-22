@@ -1,0 +1,14 @@
+{
+  "AppVersion": "2.0.0.0",
+  "Title": "Shadow",
+  "Thumbnail": "thumbnail.jpg",
+  "Preview": "thumbnail.jpg",
+  "Desc": "Shadow: monochrome stripes that move and react to music, a liquid-glass clock and timer, and a Mac-style Launchpad with a smart search bar.",
+  "Author": "",
+  "License": "",
+  "Contact": "",
+  "Type": 2,
+  "FileName": "index.html",
+  "Arguments": "",
+  "IsAbsolutePath": false
+}

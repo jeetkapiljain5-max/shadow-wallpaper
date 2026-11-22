@@ -1,0 +1,18 @@
+# personal files the app creates on each PC - never commit
+helper/token.txt
+wallpaper/launch-config.js
+helper/layout.json
+helper/usage.json
+helper/icons/
+helper/google-client.json
+helper/google-token.dat
+helper/google-library.json
+helper/google-state.json
+helper/*.log
+*.log
+setup-log.txt
+fonts-log.txt
+get-fonts.ps1
+wallpaper/fonts/
+# build output
+dist/

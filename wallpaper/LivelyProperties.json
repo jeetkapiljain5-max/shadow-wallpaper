@@ -1,0 +1,87 @@
+{
+  "motion": {
+    "type": "slider",
+    "text": "Motion strength",
+    "value": 60,
+    "min": 0,
+    "max": 100,
+    "step": 1
+  },
+  "drift": {
+    "type": "checkbox",
+    "text": "Gentle idle drift",
+    "value": true
+  },
+  "ripples": {
+    "type": "checkbox",
+    "text": "Ripples on click",
+    "value": true
+  },
+  "grain": {
+    "type": "slider",
+    "text": "Grain",
+    "value": 40,
+    "min": 0,
+    "max": 100,
+    "step": 1
+  },
+  "hour24": {
+    "type": "checkbox",
+    "text": "24-hour clock",
+    "value": false
+  },
+  "showDate": {
+    "type": "checkbox",
+    "text": "Show date",
+    "value": true
+  },
+  "separation": {
+    "type": "slider",
+    "text": "Stripe separation",
+    "value": 80,
+    "min": 0,
+    "max": 100,
+    "step": 1
+  },
+  "focus": {
+    "type": "slider",
+    "text": "Focus timer (minutes)",
+    "value": 20,
+    "min": 5,
+    "max": 90,
+    "step": 5
+  },
+  "music": {
+    "type": "checkbox",
+    "text": "React to music",
+    "value": true
+  },
+  "musicAmount": {
+    "type": "slider",
+    "text": "Music reaction strength",
+    "value": 60,
+    "min": 0,
+    "max": 100,
+    "step": 1
+  },
+  "lpIcons": {
+    "type": "dropdown",
+    "text": "Launchpad icons",
+    "value": 0,
+    "items": [
+      "Plain icons",
+      "Soft colour glass",
+      "Monochrome glass",
+      "Monochrome"
+    ]
+  },
+  "clockGlass": {
+    "type": "dropdown",
+    "text": "Clock glass",
+    "value": 0,
+    "items": [
+      "Liquid glass",
+      "Frosted (iPad)"
+    ]
+  }
+}

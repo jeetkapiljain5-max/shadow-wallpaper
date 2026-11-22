@@ -631,6 +631,51 @@
   const bigArt = u => (u || '').replace(/=w\d+-h\d+[^&?#]*$/, '=w1000-h1000-l90-rj').replace(/\/(?:default|mqdefault|hqdefault|sddefault)\.jpg/, '/maxresdefault.jpg');   // no letterbox bars
   // the cover's main colour: the hue covering the most of its coloured pixels (whites, greys and blacks don't vote),
   // so a lavender cover gives lavender, a mostly-white cover with pink details gives pink, black-and-white gives none
+  // TV backlight: each stripe takes the colour of its own slice of the picture (12 slices, left to right). Slices with little
+  // colour lean on the main hue; everything is kept light and soft
+  let liveAmbAt = 0;
+  function soften(c, hueCol, own) {
+    const m = Math.max(...c, .001); c = c.map(v => v / m);               // as light: full brightness
+    c = c.map((v, k) => v * own + hueCol[k] * (1 - own));
+    const lum = .2126 * c[0] + .7152 * c[1] + .0722 * c[2];
+    return c.map(v => Math.min(1, Math.max(0, (lum + (v - lum) * .82) * .86 + .14)));   // a little softened, a little lighter
+  }
+  function sliceCols(d, N, hueCol) {
+    const cols = [];
+    for (let s = 0; s < 12; s++) {
+      const x0 = Math.floor(s * N / 12), x1 = Math.floor((s + 1) * N / 12); let w = 0, r = 0, g = 0, b = 0, cw = 0;
+      for (let y = 0; y < N; y++) for (let xx = x0; xx < x1; xx++) {
+        const i = (y * N + xx) * 4, R = d[i] / 255, G = d[i + 1] / 255, B = d[i + 2] / 255, mx = Math.max(R, G, B), mn = Math.min(R, G, B);
+        if (mx < .1) continue;                                           // black (letterbox, shadows) says nothing
+        const sat = mx ? (mx - mn) / mx : 0, ww = .15 + sat * 1.6;       // coloured pixels count most
+        w += ww; r += R * ww; g += G * ww; b += B * ww; cw += sat;
+      }
+      cols.push(soften(w ? [r / w, g / w, b / w] : hueCol.slice(), hueCol, Math.min(1, (w ? cw / ((x1 - x0) * N) : 0) * 3.2)));
+    }
+    return cols;
+  }
+  // live: while a video plays, the helper reads its colours straight off the screen ~8 times a second (the YouTube player can't be read
+  // from the page); the storyboard frames above are only the fallback
+  let liveBusy = false, liveFails = 0;
+  async function liveGlow() {
+    if (liveBusy || !vid || !vid.ready || !musicMode || !L || document.hidden || liveFails > 20) return;
+    const r = artBox.getBoundingClientRect(); if (r.width < 20 || r.height < 20) return;
+    const dpr = devicePixelRatio || 1, ix = r.width * .06, iy = r.height * .06;   // a little inside the card's rounded edge
+    liveBusy = true;
+    try {
+      const j = await getJ(`${evBase}/vcol?${new URLSearchParams({ x: Math.round((r.left + ix) * dpr), y: Math.round((r.top + iy) * dpr), w: Math.round((r.width - ix * 2) * dpr), h: Math.round((r.height - iy * 2) * dpr), t: L.token })}`);
+      if (!j || !j.c || j.c.length !== 12) { liveFails++; return; }
+      if (!musicMode || !vid || !vid.ready) return;                        // switched to the clock while this was on its way: no colour
+      liveFails = 0;
+      const raw = j.c.map(c => c.map(v => v / 255));
+      // the main colour across the whole frame, for slices that are nearly black or grey
+      const all = raw.reduce((s, c) => s.map((v, k) => v + c[k] / 12), [0, 0, 0]), am = Math.max(...all, .001);
+      const hueCol = am < .08 ? [.92, .92, .92] : all.map(v => v / am);
+      const cols = raw.map(c => { const mx = Math.max(...c), mn = Math.min(...c), sat = mx ? (mx - mn) / mx : 0; return soften(mx < .06 ? hueCol.slice() : c, hueCol, Math.min(1, sat * 2.4) * (mx < .06 ? 0 : 1)); });
+      liveAmbAt = Date.now(); window.setStripeAmb?.(cols); window.setStripeTint?.(null, null, .55);
+    } catch (_) { liveFails++; } finally { liveBusy = false; }
+  }
+  setInterval(liveGlow, 120);
   function tintFrom(src, cut, keep) {                                   // cut: part of the picture (a frame of a storyboard); keep: no colour = keep the last
     const loaded = typeof src !== 'string', im = loaded ? src : new Image();
     const run = () => {
@@ -648,12 +693,16 @@
         // neighbouring hue bins count together (a pink spread over two bins still wins)
         let best = -1, bw = 0;
         for (let k = 0; k < 18; k++) { const s = bins[k].w + .5 * (bins[(k + 17) % 18].w + bins[(k + 1) % 18].w); if (s > bw) { bw = s; best = k; } }
-        if (best < 0 || bw < (cut ? .15 : .4)) { if (!keep) window.setStripeTint?.(null, null, 0); return; }   // no real colour on this cover
+        if (best < 0 || bw < (cut ? .15 : .4)) {                          // no real colour: a grey/dark frame still updates (soft white light), a cover goes plain
+          if (cut && Date.now() - liveAmbAt > 1500) window.setStripeAmb?.(sliceCols(d, N, [.92, .92, .92]));
+          if (!keep) window.setStripeTint?.(null, null, 0); return;
+        }
         const B = [bins[(best + 17) % 18], bins[best], bins[(best + 1) % 18]], tw = B.reduce((s, q) => s + q.w, 0);
         const col = [B.reduce((s, q) => s + q.r, 0) / tw, B.reduce((s, q) => s + q.g, 0) / tw, B.reduce((s, q) => s + q.b, 0) / tw];
         // keep the cover's hue but make it rich: at least 65% saturation, full brightness (pale lavender -> periwinkle)
-        const mx2 = Math.max(...col), mn2 = Math.min(...col), sat2 = mx2 ? (mx2 - mn2) / mx2 : 0, S2 = Math.max(.65, sat2);
+        const mx2 = Math.max(...col), mn2 = Math.min(...col), sat2 = mx2 ? (mx2 - mn2) / mx2 : 0, S2 = Math.max(.5, Math.min(.8, sat2));
         const hueCol = col.map(v => { const t = mx2 > mn2 ? (v - mn2) / (mx2 - mn2) : 1; return 1 - S2 + S2 * t; });
+        if (Date.now() - liveAmbAt > 1500) window.setStripeAmb?.(sliceCols(d, N, hueCol));   // (live colours from the screen win when they're coming in)
         window.setStripeTint?.(hueCol, hueCol, musicMode ? .55 : 0);
       } catch (_) {}
     };

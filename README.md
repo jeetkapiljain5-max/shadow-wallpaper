@@ -27,12 +27,19 @@ Or download `Shadow-Wallpaper-Setup.exe` from [Releases](../../releases) and run
   translation (`hello in japanese`), timer, stopwatch, settings, media keys, web search.
 - Music: `play` + any song, album or playlist plays it in YouTube Music.
 
+**The Windows key** — opens Launchpad right over whatever you're doing (Win + any other key still works as normal)
+- It pours up out of the bottom of the screen like the macOS genie, on its own live frosted glass; click outside it to close.
+- Hover its bottom-right corner for power: sleep, lock, restart, shut down.
+- Want Start back? Hover the bottom-right corner of the desktop Launchpad and click the Windows logo
+  (blue = Windows' own Start, soft black = Launchpad). Ctrl + Esc always opens Start.
+
 **Now Playing** — pick a song in the search (or just play one in YouTube Music, Spotify, ...)
 - The clock turns into the cover, with time-synced lyrics underneath: YouTube Music's own synced lyrics for
   YouTube Music, [LRCLIB](https://lrclib.net) for everything else.
 - Music videos and live performances play as the video itself (muted, in step with the music) in the middle,
   shaped to the video with no black bars.
-- The light in the stripes takes the colour of the cover - or, for a video, of the frame on screen.
+- The light in the stripes takes the colours of the cover - or, for a video, of what's on screen right now, stripe by stripe,
+  like the LEDs behind a TV.
 - Play / pause / next / previous on hover. Swipe the other way from Launchpad to switch between the clock and Now Playing.
 
 **Optional: your own YouTube Music library** — playlists and likes in the search. You create a free Google OAuth

@@ -10,6 +10,8 @@
 <style>
   @font-face{font-family:'SF Clock';src:url('fonts/SFClock.ttf') format('truetype');font-weight:100 900;font-display:block}
   html,body{margin:0;height:100%;overflow:hidden;background:#111;cursor:default;user-select:none}
+  html.overlay,html.overlay body{background:transparent}
+  html.overlay #c,html.overlay #date,html.overlay #dock,html.overlay #mdock,html.overlay #np,html.overlay #lyr{display:none!important}
   canvas{position:fixed;inset:0;width:100vw;height:100vh;display:block}
   #date{position:fixed;left:0;right:0;top:9.4vh;transform:translateY(-50%);text-align:center;
         font:600 2.75vh/1 "Segoe UI Variable Display","Segoe UI",system-ui,sans-serif;letter-spacing:.01em;
@@ -61,6 +63,28 @@
   .app .wall,.app .face,.app .edge{shape-rendering:geometricPrecision}
   body.liquidDock .app .wall,body.liquidDock .app .edge,body.liquidDock .app .glassy,body.liquidDock .app .sh{visibility:hidden}
   body.liquidDock .app .face{visibility:hidden}
+
+  /* the Windows button: hidden in Launchpad's bottom-right corner, it shows while the pointer is there.
+     Windows blue = the Windows key is Windows' own; click it and it turns soft black = the Windows key opens Launchpad */
+  #lpWinZone{position:absolute;right:0;bottom:0;width:17vh;height:15vh;z-index:6}
+  body > #lpWinZone,html.overlay #lpWinZone{display:none}
+  #lpWin{position:absolute;right:4vh;bottom:3.6vh;width:4.4vh;height:4.4vh;border:0;padding:0;margin:0;background:none;outline:none;cursor:pointer;
+       opacity:0;transform:scale(.8) translateY(.6vh);transition:opacity .3s ease,transform .45s cubic-bezier(.2,.9,.25,1)}
+  #lpWinZone:hover #lpWin,#lpWin:focus-visible{opacity:1;transform:none}
+  #lpWinZone:hover #lpWin:hover{transform:scale(1.07)}
+  #lpWinZone:hover #lpWin:active{transform:scale(.93);transition-duration:.12s}
+  #lpWin svg,#lpWin .gls,#lpWin .gls > *{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
+  /* on: a soft black logo */
+  #lpWin .blue{transition:opacity .6s ease}
+  #lpWin.on .blue{opacity:0}
+  #lpWin .gls > *{opacity:0;transition:opacity .6s ease}
+  #lpWin.on .gls > *{opacity:1}
+  /* turning it on: a glint runs across the glass */
+  #lpWin .shine{-webkit-mask-size:100% 100%;mask-size:100% 100%;background:linear-gradient(115deg,transparent 35%,rgba(255,255,255,.75) 50%,transparent 65%) no-repeat;
+       background-size:300% 100%;background-position:100% 0}
+  #lpWin.on .shine{opacity:0}
+  #lpWin.glint .shine{opacity:1;animation:winGlint .9s cubic-bezier(.4,0,.2,1) .15s both}
+  @keyframes winGlint{from{background-position:100% 0}to{background-position:0 0;opacity:0}}
 </style>
 </head>
 <body>
@@ -95,8 +119,20 @@
     <svg class="edge" viewBox="0 0 24 24"><g fill="none" stroke="url(#icEdge)" stroke-width=".2" stroke-linejoin="round"><path fill-rule="evenodd" d="M2.650 15.458Q3.550 17.600 2.350 21.750Q6.600 20.850 7.364 20.694A10.3 10.3 0 1 0 2.650 15.458ZM4.983 14.813Q5.150 17.150 4.550 19.250Q7.000 19.100 8.250 18.442A7.9 7.9 0 1 0 4.983 14.813Z"/><path fill-rule="nonzero" d="M8.55 7.15c.32-.55.88-.55 1.12 0l.95 2.1c.15.36.06.7-.22.98l-.62.62c.66 1.32 1.77 2.43 3.09 3.09l.62-.62c.28-.28.62-.37.98-.22l2.1.95c.55.24.55.8 0 1.12-.95.84-2.1 1.3-3.4.92-2.55-.92-4.58-2.95-5.5-5.5-.38-1.3.08-2.45.92-3.4Z"/></g></svg>
     </button>
 </div>
+  <div id="lpWinZone"><button id="lpWin" class="on" aria-label="Windows key opens Launchpad" aria-pressed="true">
+    <svg class="blue" viewBox="0 0 24 24" aria-hidden="true"><defs>
+      <filter id="winDrop" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dx="0" dy=".5" stdDeviation=".7" flood-color="#000" flood-opacity=".35"/></filter>
+      <linearGradient id="winBlue" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#4cc2ff"/><stop offset="1" stop-color="#0a6fd8"/></linearGradient></defs>
+      <path d="M2.6 3.1Q2.6 2.6 3.1 2.6H11.55V11.55H2.6ZM12.45 2.6H20.9Q21.4 2.6 21.4 3.1V11.55H12.45ZM2.6 12.45H11.55V21.4H3.1Q2.6 21.4 2.6 20.9ZM12.45 12.45H21.4V20.9Q21.4 21.4 20.9 21.4H12.45Z" fill="url(#winBlue)" filter="url(#winDrop)"/></svg>
+    <span class="gls" aria-hidden="true">
+      <svg viewBox="0 0 24 24"><defs><linearGradient id="winCoal" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#6e6e75"/><stop offset="1" stop-color="#55555b"/></linearGradient></defs>
+        <path d="M2.6 3.1Q2.6 2.6 3.1 2.6H11.55V11.55H2.6ZM12.45 2.6H20.9Q21.4 2.6 21.4 3.1V11.55H12.45ZM2.6 12.45H11.55V21.4H3.1Q2.6 21.4 2.6 20.9ZM12.45 12.45H21.4V20.9Q21.4 21.4 20.9 21.4H12.45Z" fill="url(#winCoal)" filter="url(#winDrop)"/></svg>
+      <span class="shine" style="-webkit-mask-image:url(&quot;data:image/svg+xml,%3Csvg%20xmlns=%27http://www.w3.org/2000/svg%27%20viewBox=%270%200%2024%2024%27%3E%3Cpath%20d=%27M2.6%203.1Q2.6%202.6%203.1%202.6H11.55V11.55H2.6ZM12.45%202.6H20.9Q21.4%202.6%2021.4%203.1V11.55H12.45ZM2.6%2012.45H11.55V21.4H3.1Q2.6%2021.4%202.6%2020.9ZM12.45%2012.45H21.4V20.9Q21.4%2021.4%2020.9%2021.4H12.45Z%27/%3E%3C/svg%3E&quot;);mask-image:url(&quot;data:image/svg+xml,%3Csvg%20xmlns=%27http://www.w3.org/2000/svg%27%20viewBox=%270%200%2024%2024%27%3E%3Cpath%20d=%27M2.6%203.1Q2.6%202.6%203.1%202.6H11.55V11.55H2.6ZM12.45%202.6H20.9Q21.4%202.6%2021.4%203.1V11.55H12.45ZM2.6%2012.45H11.55V21.4H3.1Q2.6%2021.4%202.6%2020.9ZM12.45%2012.45H21.4V20.9Q21.4%2021.4%2020.9%2021.4H12.45Z%27/%3E%3C/svg%3E&quot;)"></span></span>
+    </button></div>
 <script src="launch-config.js"></script>
 <script>
+const OVERLAY = new URLSearchParams(location.search).has('overlay'); window.OVERLAY = OVERLAY;   // Launchpad's own window over your apps
+if (OVERLAY) document.documentElement.classList.add('overlay');
 /* Stripe brightness profiles: 12 stripes x 40 rows (top->bottom), measured from the iPad screenshot */
 const P = [[81,81,81,79,76,70,59,45,29,14,4,1,0,0,0,0,1,11,41,85,136,182,215,233,240,242,240,234,222,205,184,164,148,136,130,127,126,126,126,126],[84,82,82,81,81,81,81,79,74,66,55,40,24,10,3,0,0,0,2,15,46,94,145,190,218,234,238,233,222,205,185,165,148,137,130,127,125,125,125,124],[131,120,111,103,96,91,88,85,83,82,80,77,71,61,47,31,15,5,1,1,4,21,57,106,156,196,220,226,221,206,186,166,149,136,129,126,123,121,118,113],[212,213,210,204,194,183,171,157,144,131,120,110,102,95,89,82,74,62,47,30,16,8,10,30,66,117,163,193,207,201,186,165,148,135,126,119,114,108,100,92],[229,229,228,227,224,222,221,220,219,218,216,212,212,201,190,180,171,163,153,141,106,46,24,17,23,47,86,129,167,186,185,170,153,135,122,111,103,94,84,75],[228,228,228,229,230,231,232,232,232,232,232,232,232,230,228,225,220,214,205,194,182,167,149,131,109,91,82,84,98,113,122,121,111,99,87,77,69,63,60,58],[227,227,228,228,229,229,231,231,231,232,232,231,230,228,225,220,214,205,193,181,164,148,131,118,108,106,110,117,119,113,96,76,62,56,58,66,73,80,86,93],[229,229,229,229,226,218,208,183,175,167,159,152,146,140,136,133,131,129,128,129,126,118,106,104,119,140,161,173,170,147,109,68,36,16,8,9,14,22,33,44],[211,210,206,197,185,170,154,136,119,101,86,72,61,53,48,46,47,53,63,77,91,107,123,141,162,183,195,192,170,131,86,46,18,4,1,1,3,8,16,27],[98,84,71,60,52,46,42,39,37,36,36,39,43,50,61,75,89,102,113,121,130,144,162,185,206,221,225,215,189,151,105,60,25,6,1,0,0,0,0,1],[38,36,35,34,34,34,35,37,41,46,55,68,82,95,107,115,120,125,130,141,158,180,202,221,233,237,231,216,190,150,101,58,24,5,0,0,0,0,0,0],[70,45,35,36,39,44,51,63,76,90,103,112,118,121,123,125,129,139,155,176,198,218,231,239,242,240,232,216,187,146,99,55,21,4,1,0,0,0,0,0]];
 for (let i = 0; i < 6; i++) P[11 - i] = P[i].slice();
@@ -124,7 +160,8 @@ uniform float uAmp[12];      // per-stripe music level 0..1
 uniform vec4 uBox;         // clock mask rect in px (x, y-from-top, w, h)
 uniform vec2 uLight;       // light position, 0..1 screen space
 uniform float uTime, uGrain, uJit, uSep, uLift, uLiquid;
-uniform vec3 uTintA, uTintB; uniform float uTintAmt, uLevel;   // music mode: the cover's colours (light parts take A, dark parts B)
+uniform vec3 uTintA, uTintB; uniform float uTintAmt, uLevel;
+uniform vec3 uAmb[12];     // music mode, TV-backlight style: each stripe's own colour, from its slice of the picture (left to right)   // music mode: the cover's colours (light parts take A, dark parts B)
 uniform vec4 uRip[6];      // x, y (px), start time, strength
 const float M = ${M.toFixed(2)};
 
@@ -259,9 +296,17 @@ void main(){
     float halo = exp(-(q.x * q.x * 1.1 + q.y * q.y * 5.)) + .3 * exp(-q.y * 9.);
     float a = uAmp[int(clamp(floor(p.x / uRes.x * 12.), 0., 11.))];
     float fall = pow(clamp(1. - p.y / uRes.y, 0., 1.), 1.7);
-    vec3 vivid = clamp(mix(vec3(dot(uTintA, vec3(.2126, .7152, .0722))), uTintA, 2.), 0., 1.);
-    vec3 light = vivid * uTintAmt * (halo * (.26 + uLevel * 1.05) + fall * a * 1.15);
+    float sx = clamp(p.x / uRes.x * 12. - .5, 0., 11.); int i0 = int(floor(sx)), i1 = min(i0 + 1, 11);
+    vec3 amb = mix(uAmb[i0], uAmb[i1], smoothstep(0., 1., fract(sx)));
+    vec3 cl = clamp(mix(vec3(dot(amb, vec3(.2126, .7152, .0722))), amb, 1.3), 0., 1.);   // light and soft, not loud
+    float yy = p.y / uRes.y, mid = 1. - .16 * exp(-pow((yy - .5) * 3.6, 2.));                // a tiny bit less right in the middle
+    vec3 light = cl * uTintAmt * (halo * (.3 + uLevel * 1.15) + fall * a * 1.25) * mid;   // from the top
+    float l0 = dot(col, vec3(.2126, .7152, .0722)), grey = 4. * l0 * (1. - l0);         // the grey parts of the stripes glow with it too
+    light += cl * uTintAmt * .3 * grey * mid;
     col = 1. - (1. - col) * (1. - clamp(light, 0., 1.));                 // screen blend: it lights the stripes up, never muddies them
+    vec3 hue = cl / max(max(cl.r, max(cl.g, cl.b)), .001);              // and a whisper of it in the bright parts (light alone can't colour white)
+    float bright = smoothstep(.3, .95, dot(col, vec3(.2126, .7152, .0722)));
+    col = mix(col, col * hue, uTintAmt * .16 * bright * mid);
   }
   // film grain, strongest in the mid-tones; plus 1-bit dither to kill banding
   float n1 = hash(p + vec2(311., 7.)), n2 = hash(p + vec2(19., 503.));
@@ -280,7 +325,7 @@ gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 3,-1, -1,3]), gl.STATIC_
 const aLoc = gl.getAttribLocation(prog, 'a'); gl.enableVertexAttribArray(aLoc); gl.vertexAttribPointer(aLoc, 2, gl.FLOAT, false, 0, 0);
 const U = n => gl.getUniformLocation(prog, n);
 const u = { prof: U('uProf'), mask: U('uMask'), res: U('uRes'), off: U('uOff'), box: U('uBox'), light: U('uLight'),
-            time: U('uTime'), grain: U('uGrain'), rip: U('uRip'), jit: U('uJit'), sep: U('uSep'), shadow: U('uShadow'), lift: U('uLift'), amp: U('uAmp'), tintA: U('uTintA'), tintB: U('uTintB'), tintAmt: U('uTintAmt'), level: U('uLevel'), liquid: U('uLiquid'), mask2: U('uMask2'), box2: U('uBox2'), dock: U('uDock') };
+            time: U('uTime'), grain: U('uGrain'), rip: U('uRip'), jit: U('uJit'), sep: U('uSep'), shadow: U('uShadow'), lift: U('uLift'), amp: U('uAmp'), tintA: U('uTintA'), amb: U('uAmb'), tintB: U('uTintB'), tintAmt: U('uTintAmt'), level: U('uLevel'), liquid: U('uLiquid'), mask2: U('uMask2'), box2: U('uBox2'), dock: U('uDock') };
 
 /* profile texture: R = sharp gradient, G = softened (for the frosted glass) */
 function cr(p, t) {
@@ -622,6 +667,8 @@ function mdockHover(px, py) {
 let musicLevel = 0;
 
 const tint = { a: [1, 1, 1], b: [.5, .5, .5], ta: [1, 1, 1], tb: [.5, .5, .5], amt: 0, tamt: 0 };
+const amb = { cur: new Float32Array(36).fill(1), tgt: new Float32Array(36).fill(1) };   // each stripe's colour (TV backlight)
+window.setStripeAmb = cols => { if (!cols || cols.length !== 12) return; cols.forEach((c, i) => { amb.tgt[i * 3] = c[0]; amb.tgt[i * 3 + 1] = c[1]; amb.tgt[i * 3 + 2] = c[2]; }); lastActive = performance.now(); };
 window.setStripeTint = (a, b, amt) => { if (a) tint.ta = a.slice(0, 3); if (b) tint.tb = b.slice(0, 3); tint.tamt = amt || 0; lastActive = performance.now(); };
 window.setMusicMode = on => {
   clockFadeTarget = on ? 0 : 1; maskBusy = true; lastActive = performance.now();
@@ -640,6 +687,23 @@ async function syncApps() {
 const DEMO = new URLSearchParams(location.search).has('demo');   // scripted showcase (demo.js)
 if (!DEMO) { syncApps(); setInterval(syncApps, 30000); }
 const FALLBACK = { whatsapp: 'whatsapp://', claude: 'claude://', ytmusic: 'https://music.youtube.com' };
+/* the Windows button: Windows key opens Launchpad (the helper remembers it) */
+const winBtn = document.getElementById('lpWin');
+function winLook(on, glint) {
+  if (!winBtn) return;
+  winBtn.classList.toggle('on', on); winBtn.setAttribute('aria-pressed', on);
+  if (on && glint) { winBtn.classList.remove('glint'); void winBtn.offsetWidth; winBtn.classList.add('glint'); clearTimeout(winLook.t); winLook.t = setTimeout(() => winBtn.classList.remove('glint'), 1200); }
+}
+async function winKeySet(on) {
+  const L = window.LAUNCH; if (on !== undefined) winLook(on, true);
+  if (!L || STILL || LOCK || OVERLAY) return;
+  try { const r = await (await fetch(L.url.replace('/open/', '/winkey') + '?t=' + L.token + (on === undefined ? '' : '&on=' + (on ? 1 : 0)), { cache: 'no-store' })).json(); winLook(!!r.on); } catch (_) {}
+}
+if (winBtn) {
+  ['mousedown', 'pointerdown'].forEach(t => winBtn.addEventListener(t, e => { e.stopPropagation(); e.preventDefault(); }));   // Launchpad stays open, typing stays in search
+  winBtn.addEventListener('click', e => { e.stopPropagation(); winKeySet(!winBtn.classList.contains('on')); });
+}
+if (!DEMO) winKeySet();
 document.querySelectorAll('#dock .app').forEach(b => {
   b.onmousedown = e => e.stopPropagation();
   b.onclick = async e => {
@@ -732,6 +796,7 @@ async function pollFront() {
 }
 if (!DEMO) pollFront();
 function frame(ms) {
+  if (OVERLAY) return;                                               // the overlay draws no wallpaper
   // paused: an app is in front, Lively paused us, or Launchpad fully covers the wallpaper
   if (livelyPaused || !desktopFront || window.lpCovering) { setTimeout(() => requestAnimationFrame(frame), window.lpCovering ? 120 : 400); return; }
   // 60 fps while something is happening (mouse, clicks, keys, music, animations, ripples); 30 fps when idle
@@ -777,7 +842,8 @@ function frame(ms) {
   gl.uniform1f(u.sep, S.separation / 100 * .09); gl.uniform4fv(u.rip, rip);
   for (let i = 0; i < 3; i++) { tint.a[i] += (tint.ta[i] - tint.a[i]) * follow(1.6); tint.b[i] += (tint.tb[i] - tint.b[i]) * follow(1.6); }
   tint.amt += (tint.tamt - tint.amt) * follow(1.4); if (Math.abs(tint.tamt - tint.amt) > .003) lastActive = performance.now();
-  gl.uniform3fv(u.tintA, tint.a); gl.uniform3fv(u.tintB, tint.b); gl.uniform1f(u.tintAmt, tint.amt);
+  { const k = follow(4); let moving = false; for (let i = 0; i < 36; i++) { const d = amb.tgt[i] - amb.cur[i]; amb.cur[i] += d * k; if (Math.abs(d) > .004) moving = true; } if (moving) lastActive = performance.now(); }
+  gl.uniform3fv(u.tintA, tint.a); gl.uniform3fv(u.tintB, tint.b); gl.uniform1f(u.tintAmt, tint.amt); gl.uniform3fv(u.amb, amb.cur);
   { let lv = 0; for (let i = 0; i < N; i++) lv += audS[i]; lv = lv / N * (S.music ? S.musicAmount / 60 : 0);   // overall loudness, 0..~1
     musicLevel += (lv - musicLevel) * follow(lv > musicLevel ? 14 : 3); gl.uniform1f(u.level, musicLevel); }
   updateDock();
@@ -813,7 +879,7 @@ if (q.has('time')) { const [h, mi] = q.get('time').split(':').map(Number); const
 
 addEventListener('resize', resize);
 if (DEMO) { const d = document.createElement('script'); d.src = 'demo.js'; document.body.appendChild(d); }
-if (!DEMO && !STILL && !LOCK) { const y = document.createElement('script'); y.src = 'lyrics.js' + (location.protocol.startsWith('http') ? '?v=' + Date.now() : ''); document.body.appendChild(y); }
+if (!DEMO && !STILL && !LOCK && !OVERLAY) { const y = document.createElement('script'); y.src = 'lyrics.js' + (location.protocol.startsWith('http') ? '?v=' + Date.now() : ''); document.body.appendChild(y); }
 if (!DEMO && !STILL && !LOCK) { const l = document.createElement('script'); l.src = 'launchpad.js' + (location.protocol.startsWith('http') ? '?v=' + Date.now() : '');   /* previews always get the newest file */ document.body.appendChild(l); }
 document.fonts.addEventListener('loadingdone', () => { if (W) resize(); });
 Promise.race([document.fonts.load(`${FW} 100px 'SF Clock'`).catch(() => {}), new Promise(r => setTimeout(r, 4000))])   // no clock font (Apple download failed): start anyway with the fallback

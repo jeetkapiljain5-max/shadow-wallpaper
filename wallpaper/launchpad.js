@@ -30,6 +30,37 @@
       transition:opacity .22s ease-out,visibility 0s linear .24s;
       font-family:"Shadow SF","SF Pro Text","SF Pro","Segoe UI Variable Text",system-ui,sans-serif;color:#fff;user-select:none;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
   #lp.open{opacity:1;pointer-events:auto;visibility:visible;transition:opacity .2s ease-out,visibility 0s}
+  html.overlay #lpBg{display:none}                                  /* over your apps: their live blur shows instead, under a soft tint */
+  html.overlay #lp{background:none}                                /* over your apps: nothing outside the frosted panel - no tint, no vignette (it showed as a dark box) */
+  html.overlay #lp::after{display:none}
+  html.overlay #lpIn{scale:.82}                                     /* over your apps: a smaller Launchpad, sitting a little lower */
+  html.overlay #lpSB{margin-top:9vh;background:rgba(255,255,255,.13);box-shadow:inset 0 0 0 1px rgba(255,255,255,.22)}   /* over your apps: see-through, like it looks while the genie pours in */
+  html.overlay .lpi > span{display:none}                            /* over your apps: icons only */
+  /* over your apps it opens like a Mac app: zooms up out of the bottom of the screen (where Start is) and back down into it -
+     the overlay window runs the same curves, so the frosted panel zooms with it */
+  html.overlay #lp:not(.fopen) #lpIn{transform:none}
+  /* power (over your apps only): hidden in the bottom-right corner of the app grid, shows while the pointer is there */
+  #lpIn{position:relative}
+  html:not(.overlay) #lpPwrZone{display:none}
+  #lpPwrZone{position:absolute;right:calc((100% - min(92vw,126vh)) / 2);top:89vh;width:13vh;height:7vh;z-index:8}
+  #lpPwr{position:absolute;right:1.4vh;bottom:1.4vh;width:3.6vh;height:3.6vh;border:0;padding:0;background:none;outline:none;cursor:pointer;
+      opacity:0;transform:scale(.8) translateY(.5vh);transition:opacity .3s ease,transform .45s ${EASE}}
+  #lpPwr svg{width:100%;height:100%;fill:none;stroke:#fff;stroke-width:2;stroke-linecap:round;filter:drop-shadow(0 .2vh .6vh rgba(0,0,0,.4))}
+  #lpPwrZone:hover #lpPwr,#lpPwrZone.menu #lpPwr{opacity:1;transform:none}
+  #lpPwrZone:hover #lpPwr:hover{transform:scale(1.08)}
+  #lpPwr:active{transform:scale(.92)!important;transition-duration:.12s}
+  #lpPwrMenu{position:absolute;right:0;bottom:6.4vh;width:24vh;padding:.8vh;border-radius:2.2vh;background:rgba(36,36,40,.8);
+      box-shadow:inset 0 0 0 .07vh rgba(255,255,255,.2),0 1.6vh 4vh rgba(0,0,0,.4);backdrop-filter:blur(3vh) saturate(1.6);
+      opacity:0;pointer-events:none;transform:scale(.92) translateY(1vh);transform-origin:100% 100%;transition:opacity .18s ease,transform .3s ${EASE}}
+  #lpPwrZone.menu #lpPwrMenu{opacity:1;pointer-events:auto;transform:none}
+  #lpPwrMenu .mi{display:flex;align-items:center;gap:1.4vh;padding:1.2vh 1.4vh;border-radius:1.4vh;font:500 1.9vh "Shadow SF","Segoe UI Variable Text",sans-serif;color:#fff;cursor:pointer;transition:background-color .12s,transform .12s}
+  #lpPwrMenu .mi svg{width:2.2vh;height:2.2vh;flex:none;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;opacity:.9}
+  #lpPwrMenu .mi:hover{background:rgba(255,255,255,.17)}
+  #lpPwrMenu .mi:active{transform:scale(.97)}
+  html.overlay:not(.gn) #lp{transform-origin:50% 97%;transform:scale(.1);transition:opacity .2s ease-in .05s,transform .26s cubic-bezier(.5,0,.75,.35),visibility 0s linear .27s}
+  html.gn #lp,html.gn #lp.open{transform:none;transition:visibility 0s}
+  html.gn #lp.gh{opacity:0!important}
+  html.overlay:not(.gn) #lp.open{transform:none;transition:opacity .08s ease-out,transform .4s cubic-bezier(.16,1,.3,1),visibility 0s}
   #lpBg{position:absolute;inset:-4%;width:108%;height:108%;z-index:-1;transform:scale(1.04);transition:transform .5s ${EASE}}
   #lp.open #lpBg{transform:none}
   #lp::after{content:"";position:absolute;inset:0;z-index:-1;pointer-events:none;
@@ -210,12 +241,19 @@
     <div id="lp" aria-hidden="true"><canvas id="lpBg"></canvas><div id="lpIn">
       <div id="lpSB"><div id="lpPh"><i id="lpMag"></i><span>Search</span></div><input id="lpSearch" spellcheck="false" autocomplete="off" aria-label="Search"></div>
       <div id="lpAns"></div>
-      <div id="lpView"><div id="lpTrack"></div><div id="lpEmpty">No Results</div></div><div id="lpDots"></div></div>
+      <div id="lpView"><div id="lpTrack"></div><div id="lpEmpty">No Results</div></div><div id="lpDots"></div>
+      <div id="lpPwrZone"><div id="lpPwrMenu" role="menu">
+        <div class="mi" role="menuitem" data-p="sleep"><svg viewBox="0 0 24 24"><path d="M20 14.6A8.2 8.2 0 1 1 9.4 4a6.6 6.6 0 0 0 10.6 10.6z"/></svg>Sleep</div>
+        <div class="mi" role="menuitem" data-p="lock"><svg viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="10" rx="2.2"/><path d="M8.2 10.5V7.6a3.8 3.8 0 0 1 7.6 0v2.9"/></svg>Lock</div>
+        <div class="mi" role="menuitem" data-p="restart"><svg viewBox="0 0 24 24"><path d="M19.6 12.4a7.6 7.6 0 1 1-2.3-6"/><path d="M19.6 3.6v4.6H15"/></svg>Restart</div>
+        <div class="mi" role="menuitem" data-p="shutdown"><svg viewBox="0 0 24 24"><path d="M12 3.2v8"/><path d="M6.4 6.6a7.6 7.6 0 1 0 11.2 0"/></svg>Shut down</div>
+      </div><button id="lpPwr" aria-label="Power"><svg viewBox="0 0 24 24"><path d="M12 3.2v8"/><path d="M6.4 6.6a7.6 7.6 0 1 0 11.2 0"/></svg></button></div></div>
       <div id="lpBar"><div class="lpPill" id="lpRestore" style="display:none"><span></span></div><div class="lpPill" id="lpDone"><span>Done</span></div></div>
       <div id="lpFolder"><div id="lpFPanel"><input id="lpFName" spellcheck="false" autocomplete="off"><div id="lpFGrid"></div></div></div>
       <div id="lpMenu"><div id="lpMenuIn"></div></div><div id="lpDlg"><div id="lpDlgBox"><div id="lpDlgIn"></div></div></div><div id="lpToast"></div></div>`);
   const $ = id => document.getElementById(id);
   const lp = $('lp'), bg = $('lpBg'), bgx = bg.getContext('2d'), search = $('lpSearch'), track = $('lpTrack'), dots = $('lpDots'), empty = $('lpEmpty'), ansEl = $('lpAns');
+  { const wb = document.getElementById('lpWinZone'); if (wb) lp.appendChild(wb); }   // the Windows button lives in Launchpad's bottom corner
   const sb = $('lpSB'); let glass = null, gAns = null, gMenu = null, gDone = null, gRestore = null, gDlg = null; const glasses = [];
   ansEl.innerHTML = '<div id="lpAnsRows"></div>'; const ansRows = $('lpAnsRows');
   sb.insertAdjacentHTML('beforeend', '<i id="lpSelHi"></i><i id="lpCaret"></i><span id="lpMeas"></span>');
@@ -223,7 +261,7 @@
     sc.onload = () => {
       const vh = v => innerHeight * v / 100;
       const mk = (el, o) => { let g = null; try { g = window.ShadowGlass(el, bg, o); } catch (_) {} if (g) { el.classList.add('lgHost'); glasses.push(g); } else el.classList.add('nogl'); return g; };
-      glass = mk(sb, { radius: 'pill', tint: .14, shadow: .07, stretch: true, stretchContent: true, pad: 64, glare: 3.8, glareRange: 12.5, disp: 9, rim: .15, rimWidth: 30, rimAmt: .3, glow: 0 });   // brighter, thick soft rim, faint inner glow, little rainbow   // brighter bar, thin bright glare, softer colour fringe
+      glass = window.OVERLAY ? null : mk(sb, { radius: 'pill', tint: .14, shadow: .07, stretch: true, stretchContent: true, pad: 64, glare: 3.8, glareRange: 12.5, disp: 9, rim: .15, rimWidth: 30, rimAmt: .3, glow: 0 });   // brighter, thick soft rim, faint inner glow, little rainbow   // brighter bar, thin bright glare, softer colour fringe
       gAns = mk(ansEl, { radius: () => vh(2.6), tint: .1, frost: 0, shadow: .12, pad: 30, disp: 18, rim: .5 });
       gMenu = mk($('lpMenu'), { radius: () => vh(2.4), tint: .05, frost: 1, shadow: .3, pad: 44, glare: 1.2, glareRange: 14, disp: 10, rim: .25, rimWidth: 22, rimAmt: .22 });
       gDone = mk($('lpDone'), { radius: 'pill', tint: .09, shadow: .1, stretch: true });
@@ -711,6 +749,7 @@
     liveBgT = setTimeout(liveBg, music ? 33 : 500);
   }
   function snapshot(done) {
+    if (window.OVERLAY) { if (window.__overlayBg) drawBg(window.__overlayBg); else bgx.clearRect(0, 0, bg.width, bg.height); done(); return; }   // over your apps: Windows blurs them live; the picture is only for the glass to bend
     window.__snapCb = cv => { drawBg(cv); done(); };
     setTimeout(() => {                                                // wallpaper paused (no fresh frame): plain frosted tone instead
       if (!window.__snapCb) return; window.__snapCb = null;
@@ -729,31 +768,245 @@
     snapshot(() => {
       if (!open) return;
       window.lpCovering = true;                                       // the snapshot covers it: stop drawing the wallpaper now
-      lp.classList.remove('closing'); lp.offsetWidth; lp.classList.add('open', 'typing'); lp.setAttribute('aria-hidden', 'false'); glasses.forEach(g => g.animate(700)); placeCaret();   // caret blinks from the start
+      lp.classList.remove('closing'); if (genie) lp.classList.add('gh'); lp.offsetWidth; lp.classList.add('open', 'typing'); lp.setAttribute('aria-hidden', 'false'); glasses.forEach(g => g.animate(700)); placeCaret();   // caret blinks from the start
       requestAnimationFrame(() => open && search.focus({ preventScroll: true }));
+      if (window.OVERLAY) {
+        if (genie) requestAnimationFrame(() => { genie.open().then(ok => { if (!ok && open) { lp.classList.remove('gh'); window.chrome?.webview?.postMessage('shown'); } }); });
+        else window.chrome?.webview?.postMessage('shown');               // zooming in now: the frosted panel zooms with it
+      }
       liveBg();
     });
     refreshBattery(); fetchRates(); loadLayout();
   }
   function hide() {
     if (!open) return;
+    if (genie?.busy) genie.cancel();                                  // closed while still pouring in
+    const poured = window.OVERLAY && genie && !genie.busy && genie.close(() => { if (!open) window.chrome?.webview?.postMessage('hide'); });   // over your apps: pours down into the bottom
     if (dlg) closeDlg(false); closeMenu(); closeFolder(); exitWiggle();
+    $('lpPwrZone').classList.remove('menu'); setTimeout(() => { if (!open) frost?.reset(); }, 600);   // next time: a fresh picture of what's behind
     open = window.lpOpen = false; window.lpCovering = false; fastState(0); clearTimeout(liveBgT); window.__snapCb = null;
     lp.classList.add('closing'); lp.classList.remove('open', 'typing', 'wide'); lp.setAttribute('aria-hidden', 'true'); search.blur(); glass?.animate(320);
     setTimeout(() => { if (!open) lp.classList.remove('closing'); }, 300);
+    if (window.OVERLAY && !poured) { window.chrome?.webview?.postMessage('closing'); setTimeout(() => { if (!open) window.chrome?.webview?.postMessage('hide'); }, 280); }   // blur off now, window away once the zoom-out ends
     clearInterval(liveT); liveT = 0;
     setTimeout(() => { if (!open) loadApps().then(() => { if (!open) build(''); }); }, 450);   // pick up the new usage order for next time
   }
   window.lpShow = show; window.lpHide = hide;
+  // the overlay window: opened with a picture of the screen behind it (frosted into Launchpad's background)
+  window.__overlayShow = src => { const im = new Image(); im.onload = () => { window.__overlayBg = im; show(); }; im.onerror = () => show(); im.src = src; };
+  // faster: the picture of the screen goes up sharp first (the window appears looking exactly like the screen), then
+  // Launchpad blurs and zooms in over it in plain sight
+  window.__overlayPrep = src => new Promise(res => {
+    let sh = document.getElementById('ovShot');
+    if (!sh) { sh = document.createElement('img'); sh.id = 'ovShot'; sh.style.cssText = 'position:fixed;inset:0;width:100%;height:100%;object-fit:cover;z-index:0;pointer-events:none'; document.body.prepend(sh); }
+    sh.onload = () => { window.__overlayBg = sh; res(1); }; sh.onerror = () => res(0); sh.src = src;
+  });
+  window.__overlayGo = () => { show(); sendPanel(true); };
+  let lastPanel = '';
+  // Launchpad's panel over your apps (search bar + answers + app grid + dots + power, an open folder / menu), padded, in screen pixels
+  function panelPx() {
+    const els = ['lpSB', 'lpAns', 'lpView', 'lpDots', 'lpPwrZone', 'lpFPanel', 'lpMenuIn', 'lpDlgBox'].map(id => $(id)).filter(e => e && e.offsetParent !== null);
+    let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+    // where things will be once the zooms settle (Launchpad's own around the bottom, the inner one around the middle)
+    const inner = $('lpIn'), k = new DOMMatrix(getComputedStyle(inner).transform).a || 1, cx = innerWidth / 2, cy = innerHeight / 2;
+    const kl = new DOMMatrix(getComputedStyle(lp).transform).a || 1, ox = innerWidth / 2, oy = innerHeight * .97;
+    const un = (v, o, f) => o + (v - o) / f;
+    for (const e of els) {
+      let r = e.getBoundingClientRect(); if (r.width < 2 || r.height < 2) continue;
+      if (Math.abs(kl - 1) > .001) r = { left: un(r.left, ox, kl), top: un(r.top, oy, kl), right: un(r.right, ox, kl), bottom: un(r.bottom, oy, kl) };
+      if (inner.contains(e) && Math.abs(k - 1) > .001) r = { left: un(r.left, cx, k), top: un(r.top, cy, k), right: un(r.right, cx, k), bottom: un(r.bottom, cy, k) };
+      x0 = Math.min(x0, r.left); y0 = Math.min(y0, r.top); x1 = Math.max(x1, r.right); y1 = Math.max(y1, r.bottom);
+    }
+    if (x1 < x0) return null;
+    const pad = innerHeight * .045, d = devicePixelRatio || 1;
+    return [x0 - pad, y0 - pad, x1 - x0 + pad * 2, y1 - y0 + pad * 2, innerHeight * .045].map(n => Math.round(Math.max(0, n) * d));
+  }
+  /* Launchpad's own frosted glass over your apps: the overlay sends a small live picture of what is behind the panel; it is
+     blurred and tinted here, with properly round corners (Windows' own blur can't be shaped, and drew a box and a shadow) */
+  const frost = (() => {
+    if (!window.OVERLAY) return null;
+    const box = document.createElement('div'); box.id = 'ovFrost';
+    const c = document.createElement('canvas'), x = c.getContext('2d'); box.appendChild(c); lp.prepend(box);
+    const css = document.createElement('style');
+    css.textContent = `#ovFrost{position:fixed;z-index:0;border-radius:2.6vh;overflow:hidden;pointer-events:none;background:rgba(40,40,46,.55);
+}
+      #ovFrost canvas{position:absolute;inset:0;width:100%;height:100%}
+      #ovFrost::after{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;box-shadow:inset 0 0 0 1px rgba(255,255,255,.26)}`;   /* the outline sits above the picture (the picture covered it) */
+    document.head.appendChild(css);
+    const im = new Image(); let busy = false, next = null, have = false;
+    function paint() {
+      const w = Math.max(8, Math.round(box.clientWidth / 5)), h = Math.max(8, Math.round(box.clientHeight / 5));
+      if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
+      const b = Math.max(2, h * .035);                                 // a strong blur, like Windows' acrylic
+      x.filter = `blur(${b}px) saturate(160%)`; x.drawImage(im, -b * 2, -b * 2, w + b * 4, h + b * 4); x.filter = 'none';
+      x.fillStyle = 'rgba(26,26,30,.38)'; x.fillRect(0, 0, w, h);      // a soft dark tint, so white text and icons read on anything
+      have = true;
+    }
+    im.onload = () => { paint(); busy = false; if (next) { const n = next; next = null; busy = true; im.src = n; } };
+    im.onerror = () => { busy = false; };
+    window.chrome?.webview?.addEventListener('message', e => {
+      const d = e.data; if (typeof d !== 'string' || !d.startsWith('bg:')) return;
+      if (busy) { next = d.slice(3); return; } busy = true; im.src = d.slice(3);
+    });
+    return {
+      place(px) { const d = devicePixelRatio || 1; Object.assign(box.style, { left: px[0] / d + 'px', top: px[1] / d + 'px', width: px[2] / d + 'px', height: px[3] / d + 'px' }); },
+      canvas: c, get ready() { return have; }, reset() { have = false; next = null; }
+    };
+  })();
+  function sendPanel(force) {
+    if (!window.OVERLAY || !open || genie?.busy) return;
+    const p = panelPx(); if (!p) return; frost?.place(p); const v = p.join(',');
+    if (v !== lastPanel || force) { lastPanel = v; window.chrome?.webview?.postMessage('panel:' + v); }
+  }
+
+  /* ---------- the genie (macOS): over your apps, Launchpad pours up out of the bottom of the screen, and back down into it ----------
+     Launchpad is painted into a picture (icons, search bar, dots, on a frosted copy of the screen) and the picture is bent on a
+     mesh: its bottom pinches toward the bottom-middle of the screen as it slides in or out. Once it settles, the real Launchpad
+     and Windows' live blur take over (and on closing, the picture takes over from them). */
+  const genie = (() => {
+    if (!window.OVERLAY) return null;
+    const cv = document.createElement('canvas'); cv.id = 'lpGenie';
+    cv.style.cssText = 'position:fixed;left:0;top:0;width:100vw;height:100vh;z-index:100;pointer-events:none;visibility:hidden';
+    document.body.appendChild(cv);
+    const g = cv.getContext('webgl', { alpha: true, premultipliedAlpha: true, antialias: true });
+    if (!g) return null;
+    const mk = (t, src) => { const sh = g.createShader(t); g.shaderSource(sh, src); g.compileShader(sh); return sh; };
+    const pr = g.createProgram();
+    g.attachShader(pr, mk(g.VERTEX_SHADER, 'attribute vec2 p;attribute vec2 q;varying vec2 v;void main(){v=q;gl_Position=vec4(p,0.,1.);}'));
+    g.attachShader(pr, mk(g.FRAGMENT_SHADER, 'precision mediump float;varying vec2 v;uniform sampler2D t;uniform float a;void main(){gl_FragColor=texture2D(t,v)*a;}'));
+    g.linkProgram(pr); if (!g.getProgramParameter(pr, g.LINK_STATUS)) return null;
+    g.useProgram(pr);
+    const C = 14, RW = 72, N = (RW + 1) * (C + 1), pos = new Float32Array(N * 2), uv = new Float32Array(N * 2), idx = [];
+    for (let r = 0; r <= RW; r++) for (let c = 0; c <= C; c++) { const i = r * (C + 1) + c; uv[i * 2] = c / C; uv[i * 2 + 1] = r / RW; }
+    for (let r = 0; r < RW; r++) for (let c = 0; c < C; c++) { const i = r * (C + 1) + c; idx.push(i, i + 1, i + C + 1, i + 1, i + C + 2, i + C + 1); }
+    g.bindBuffer(g.ELEMENT_ARRAY_BUFFER, g.createBuffer()); g.bufferData(g.ELEMENT_ARRAY_BUFFER, new Uint16Array(idx), g.STATIC_DRAW);
+    const qb = g.createBuffer(); g.bindBuffer(g.ARRAY_BUFFER, qb); g.bufferData(g.ARRAY_BUFFER, uv, g.STATIC_DRAW);
+    const qL = g.getAttribLocation(pr, 'q'); g.enableVertexAttribArray(qL); g.vertexAttribPointer(qL, 2, g.FLOAT, false, 0, 0);
+    const pb = g.createBuffer(), pL = g.getAttribLocation(pr, 'p'); g.enableVertexAttribArray(pL);
+    const aU = g.getUniformLocation(pr, 'a');
+    const tex = g.createTexture(); g.bindTexture(g.TEXTURE_2D, tex);
+    [[g.TEXTURE_MIN_FILTER, g.LINEAR], [g.TEXTURE_MAG_FILTER, g.LINEAR], [g.TEXTURE_WRAP_S, g.CLAMP_TO_EDGE], [g.TEXTURE_WRAP_T, g.CLAMP_TO_EDGE]].forEach(([k, v]) => g.texParameteri(g.TEXTURE_2D, k, v));
+    g.pixelStorei(g.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
+    g.enable(g.BLEND); g.blendFunc(g.ONE, g.ONE_MINUS_SRC_ALPHA);
+    const tc = document.createElement('canvas'), tx = tc.getContext('2d');
+    let P = null, t = 0, alpha = 1, raf = 0;
+    const clamp = v => Math.max(0, Math.min(1, v)), smooth = (a, b, v) => { v = clamp((v - a) / (b - a)); return v * v * (3 - 2 * v); };
+    const rr = (x, y, w, h, r) => { tx.beginPath(); tx.roundRect(x, y, w, h, r); };
+    function paint() {                                                 // Launchpad as it looks right now, into the picture
+      const d = devicePixelRatio || 1, W = Math.max(2, Math.round(P.w * d)), H = Math.max(2, Math.round(P.h * d));
+      if (tc.width !== W || tc.height !== H) { tc.width = W; tc.height = H; }
+      tx.setTransform(1, 0, 0, 1, 0, 0); tx.clearRect(0, 0, W, H); tx.setTransform(d, 0, 0, d, -P.x * d, -P.y * d);
+      const rad = innerHeight * .026;
+      tx.save(); rr(P.x, P.y, P.w, P.h, rad); tx.clip();
+      const bg = window.__overlayBg;                                    // the same frosted glass as the settled panel
+      if (frost?.ready) { tx.fillStyle = 'rgba(40,40,46,.55)'; tx.fillRect(P.x, P.y, P.w, P.h); tx.drawImage(frost.canvas, P.x, P.y, P.w, P.h); tx.fillStyle = 'rgba(0,0,0,0)'; }
+      else if (bg && bg.width) { tx.filter = 'blur(28px) saturate(150%)'; tx.drawImage(bg, -40, -40, innerWidth + 80, innerHeight + 80); tx.filter = 'none'; tx.fillStyle = 'rgba(26,26,30,.4)'; }
+      else tx.fillStyle = 'rgba(34,34,38,.82)';
+      tx.fillRect(P.x, P.y, P.w, P.h);
+      tx.restore();
+      tx.save(); rr(P.x + .5, P.y + .5, P.w - 1, P.h - 1, rad); tx.strokeStyle = 'rgba(255,255,255,.26)'; tx.lineWidth = 1; tx.stroke(); tx.restore();
+      const sb = $('lpSB').getBoundingClientRect();                     // the search bar
+      if (sb.width > 2) {
+        tx.save(); rr(sb.left, sb.top, sb.width, sb.height, sb.height / 2); tx.fillStyle = 'rgba(255,255,255,.13)'; tx.fill(); tx.strokeStyle = 'rgba(255,255,255,.22)'; tx.lineWidth = 1; tx.stroke();
+        // the placeholder where the real bar has it: on the left while it's focused (it always is, once open), else centred
+        const k = sb.width / ($('lpSB').offsetWidth || sb.width), vh = innerHeight / 100, left = search.value || lp.classList.contains('typing');
+        const fs = 2.2 * vh * k; tx.font = `400 ${fs}px "Shadow SF","SF Pro Text","Segoe UI Variable Text",sans-serif`; tx.textBaseline = 'middle';
+        const txt = search.value || 'Search', tw = tx.measureText(txt).width, mx = left ? sb.left + 2 * vh * k : sb.left + (sb.width - tw - fs * 1.3) / 2, my = sb.top + sb.height / 2;
+        tx.fillStyle = search.value ? '#fff' : (left ? 'rgba(255,255,255,.52)' : 'rgba(255,255,255,.86)'); tx.strokeStyle = 'rgba(255,255,255,.92)'; tx.lineWidth = fs * .11;
+        tx.beginPath(); tx.arc(mx + fs * .36, my - fs * .06, fs * .3, 0, 7); tx.stroke(); tx.beginPath(); tx.moveTo(mx + fs * .58, my + fs * .16); tx.lineTo(mx + fs * .8, my + fs * .38); tx.stroke();
+        tx.fillText(txt, mx + fs * 1.3 + (left && !search.value ? .35 * vh * k : 0), my + fs * .04); tx.restore();
+      }
+      const vr = $('lpView').getBoundingClientRect();                   // the icons on the page you're on
+      tx.save(); tx.shadowColor = 'rgba(0,0,0,.28)'; tx.shadowBlur = 8; tx.shadowOffsetY = 3;
+      for (const it of track.querySelectorAll('.lpi')) {
+        const ic = it.querySelector('.ic'); if (!ic) continue; const r = ic.getBoundingClientRect();
+        if (r.right < vr.left || r.left > vr.right || r.bottom < vr.top || r.top > vr.bottom || r.width < 2) continue;
+        if (it.classList.contains('folder')) { rr(r.left, r.top, r.width, r.height, r.width * .23); tx.fillStyle = 'rgba(255,255,255,.2)'; tx.fill(); }
+        for (const im of ic.querySelectorAll('img')) {
+          if (!im.complete || !im.naturalWidth) continue; const b = im.getBoundingClientRect(); if (b.width < 1) continue;
+          const k = Math.min(b.width / im.naturalWidth, b.height / im.naturalHeight), w = im.naturalWidth * k, h = im.naturalHeight * k;
+          try { tx.drawImage(im, b.left + (b.width - w) / 2, b.top + (b.height - h) / 2, w, h); } catch (_) {}
+        }
+      }
+      tx.restore();
+      for (const dt of dots.children) { const r = dt.getBoundingClientRect(); if (r.width < 1) continue; tx.fillStyle = getComputedStyle(dt).backgroundColor; tx.beginPath(); tx.arc(r.left + r.width / 2, r.top + r.height / 2, r.width / 2, 0, 7); tx.fill(); }
+      g.bindTexture(g.TEXTURE_2D, tex);
+      try { g.texImage2D(g.TEXTURE_2D, 0, g.RGBA, g.RGBA, g.UNSIGNED_BYTE, tc); } catch (_) { return false; }
+      return true;
+    }
+    function draw() {                                                  // t: 0 = Launchpad in place, 1 = poured into the bottom of the screen
+      const d = devicePixelRatio || 1, W = Math.round(innerWidth * d), H = Math.round(innerHeight * d);
+      if (cv.width !== W || cv.height !== H) { cv.width = W; cv.height = H; }
+      g.viewport(0, 0, W, H); g.clearColor(0, 0, 0, 0); g.clear(g.COLOR_BUFFER_BIT);
+      const tX = innerWidth / 2, tY = innerHeight - 2, tw = innerHeight * .05, span = tY - P.y;
+      const pinch = smooth(0, .55, t), slide = smooth(.2, 1, t);         // the bottom pinches in first, then everything slides down the funnel
+      for (let r = 0; r <= RW; r++) {
+        const v = r / RW; let Y = P.y + v * P.h + slide * span; if (Y > tY) Y = tY;
+        const f = (1 - Math.cos(Math.PI * clamp((Y - P.y) / span))) / 2 * pinch;
+        const L = P.x + (tX - tw / 2 - P.x) * f, Rt = P.x + P.w + (tX + tw / 2 - P.x - P.w) * f;
+        for (let c = 0; c <= C; c++) { const i = (r * (C + 1) + c) * 2, X = L + (Rt - L) * (c / C); pos[i] = X / innerWidth * 2 - 1; pos[i + 1] = 1 - Y / innerHeight * 2; }
+      }
+      g.bindBuffer(g.ARRAY_BUFFER, pb); g.bufferData(g.ARRAY_BUFFER, pos, g.DYNAMIC_DRAW); g.vertexAttribPointer(pL, 2, g.FLOAT, false, 0, 0);
+      g.uniform1f(aU, alpha * (1 - smooth(.86, 1, t)));
+      g.drawElements(g.TRIANGLES, idx.length, g.UNSIGNED_SHORT, 0);
+    }
+    function run(from, to, ms, ease, done) {
+      cancelAnimationFrame(raf); const t0 = performance.now();
+      const step = now => { const p = Math.min(1, Math.max(0, now - t0) / ms); t = from + (to - from) * ease(p); draw(); if (p < 1) raf = requestAnimationFrame(step); else { raf = 0; done && done(); } };
+      raf = requestAnimationFrame(step);
+    }
+    const post = m => window.chrome?.webview?.postMessage(m);
+    function region() {                                                // the window while the genie runs: the panel, down to the bottom of the screen
+      const d = devicePixelRatio || 1, tw = innerHeight * .05, x0 = Math.min(P.x, innerWidth / 2 - tw), x1 = Math.max(P.x + P.w, innerWidth / 2 + tw);
+      return [x0 - 2, P.y - 2, x1 - x0 + 4, innerHeight - P.y + 2].map(n => Math.round(n * d)).join(',');
+    }
+    const api = { busy: false };
+    api.cancel = () => { cancelAnimationFrame(raf); raf = 0; cv.style.visibility = 'hidden'; api.busy = false; };
+    // open: Launchpad is laid out (invisible); paint it, pour it up, then hand over to the real thing
+    api.open = async () => {
+      const px = panelPx(); if (!px) return false; frost?.place(px);
+      for (let i = 0; i < 6 && frost && !frost.ready; i++) await new Promise(r => setTimeout(r, 16));
+      const d = devicePixelRatio || 1; P = { x: px[0] / d, y: px[1] / d, w: px[2] / d, h: px[3] / d };
+      const imgs = [...track.querySelectorAll('.lpi img')].slice(0, 48).filter(im => !im.complete);
+      if (imgs.length) await Promise.race([Promise.all(imgs.map(im => im.decode().catch(() => {}))), new Promise(r => setTimeout(r, 120))]);
+      if (!open || !paint()) return false;
+      api.busy = true; alpha = 1; t = 1; draw(); cv.style.visibility = 'visible';
+      post('vis'); post('place:' + region());
+      requestAnimationFrame(() => run(1, 0, 500, p => p * p * (3 - 2 * p), () => {               // even, eased at both ends - the whole pour is visible
+        if (!open) { api.busy = false; return; }
+        api.busy = false; sendPanel(true); post('frost:1');            // the window shrinks to the panel and Windows' live blur comes on underneath
+        requestAnimationFrame(() => {
+          lp.classList.remove('gh');                                   // the real Launchpad under the picture, then the picture fades
+          const t0 = performance.now(), fade = now => { if (api.busy) return; alpha = 1 - Math.min(1, Math.max(0, now - t0) / 170); draw(); if (alpha > 0 && open) requestAnimationFrame(fade); else if (open) cv.style.visibility = 'hidden'; };
+          requestAnimationFrame(fade);
+        });
+      }));
+      return true;
+    };
+    // close: the picture takes over from Launchpad and Windows' blur, and pours down into the bottom of the screen
+    api.close = done => {
+      const px = panelPx(); if (!px) return false;
+      const d = devicePixelRatio || 1; P = { x: px[0] / d, y: px[1] / d, w: px[2] / d, h: px[3] / d };
+      if (!paint()) return false;
+      api.busy = true; alpha = 1; t = 0; draw(); cv.style.visibility = 'visible'; lp.classList.add('gh');
+      post('genieout'); post('place:' + region());
+      requestAnimationFrame(() => run(0, 1, 400, p => p * p * (3 - 2 * p) * .35 + p * p * .65, () => { cv.style.visibility = 'hidden'; api.busy = false; done && done(); }));
+      return true;
+    };
+    document.documentElement.classList.add('gn');
+    return api;
+  })();
+  setInterval(() => sendPanel(false), 250);                           // follows the bar widening, answers, folders
+  window.__overlayBgSet = src => { const im = new Image(); im.onload = () => { window.__overlayBg = im; drawBg(im); }; im.src = src; };   // the screen under the glass search bar
   let lastToggle = 0, helperLive = false;
   function toggle() { const t = performance.now(); if (t - lastToggle < 350) return; lastToggle = t; open ? hide() : show(); }
   // only the real wallpaper (Lively's WebView2) talks to the helper's key channel: a test page or browser tab must never
   // receive your keystrokes or tell the helper that Launchpad opened or closed. Add ?helper to the URL to force it on.
   const IN_LIVELY = !!(window.chrome && window.chrome.webview) || /Lively/i.test(navigator.userAgent) || new URLSearchParams(location.search).has('helper');
-  function fastState(o) { if (!IN_LIVELY) return; fetch(`${evBase}/lpstate?${q2s({ open: o })}`, { cache: 'no-store', mode: 'no-cors' }).catch(() => call('lpstate', { open: o })); }
+  function fastState(o) { if (!IN_LIVELY || window.OVERLAY) return; fetch(`${evBase}/lpstate?${q2s({ open: o })}`, { cache: 'no-store', mode: 'no-cors' }).catch(() => call('lpstate', { open: o })); }
   const evBase = base.replace(/:(\d+)$/, (m, p) => ':' + (+p + 1));      // the helper's instant key / swipe channel
   (async function waitForHelper() {                                 // long-poll: answered the moment a key, swipe or F4 happens
-    if (!IN_LIVELY) return;
+    if (!IN_LIVELY || window.OVERLAY) return;                        // the overlay gets its keys directly (it's a normal focused window)
     let since = -1;
     for (;;) {
       try {
@@ -765,9 +1018,18 @@
     }
   })();
 
+  // the power menu closes on any press that isn't on it or its button (before anything else gets the press)
+  document.addEventListener('pointerdown', e => { if (!e.target.closest('#lpPwr,#lpPwrMenu')) $('lpPwrZone').classList.remove('menu'); }, true);
+  $('lpPwr').addEventListener('click', e => { e.stopPropagation(); $('lpPwrZone').classList.toggle('menu'); });
+  $('lpPwrMenu').addEventListener('click', e => {
+    const mi = e.target.closest('.mi'); if (!mi) return; e.stopPropagation();
+    window.chrome?.webview?.postMessage('launch');                    // no handing the keyboard back: the PC is going to sleep / lock / restart
+    hide(); setTimeout(() => call('power', { a: mi.dataset.p }), 320);   // Launchpad zooms away first
+  });
   function launch(it) {                                               // macOS: the app opens while Launchpad zooms away
     if (!it.dataset.k) return;
     it.classList.add('press');
+    if (window.OVERLAY) window.chrome?.webview?.postMessage('launch');   // the app you open keeps the keyboard
     call('launch', { k: it.dataset.k });
     hide();
   }
@@ -1662,9 +1924,10 @@
   dots.addEventListener('click', e => { const d = e.target.closest('i'); if (d) goPage(+d.dataset.p); });
   lp.addEventListener('mousedown', e => {        // click on empty space closes; nothing reaches the wallpaper underneath
     e.stopPropagation();
+    if (e.target.closest('#lpPwr,#lpPwrMenu')) return;
     if (e.target.closest('#lpMenu,#lpDlgBox,#lpBar,#lpFPanel,.lpi,#lpSB,#lpDots,#lpAns')) { if (!e.target.closest('#lpMenu,.x')) closeMenu(); return; }
     e.preventDefault();
-    if (dlg) closeDlg(false); else if (menuFor) closeMenu(); else if (folderOpenId) closeFolder(); else if (wiggle) exitWiggle(); else hide();
+    if (dlg) closeDlg(false); else if (menuFor) closeMenu(); else if (folderOpenId) closeFolder(); else if (wiggle) exitWiggle(); else if (!window.OVERLAY) hide();   // over your apps: only a click outside Launchpad closes it
   });
   search.addEventListener('input', onQuery);
   document.addEventListener('selectionchange', () => { if (open && document.activeElement === search) placeCaret(); });

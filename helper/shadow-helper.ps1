@@ -438,6 +438,7 @@ public class TouchSwipe : NativeWindow {
     string c = FgClass(gi.hwndFocus); return c.IndexOf("Edit", StringComparison.OrdinalIgnoreCase) >= 0 || gi.hwndCaret != IntPtr.Zero;
   }
   public static volatile bool LpOpen; public static bool KeyLog = false; static long pageSeen;
+  public static bool WinKey = true; static bool winHeld, winAlone, lpShowedDesk;   // the Windows key on its own opens / closes Launchpad
   public static void Seen() { System.Threading.Interlocked.Exchange(ref pageSeen, DateTime.UtcNow.Ticks); }
   static bool PageAlive() { return DateTime.UtcNow.Ticks - System.Threading.Interlocked.Read(ref pageSeen) < 30000000; }        // a waiting poll refreshes this every second        // wallpaper connected in the last 3 s
   // event log with sequence numbers: each poll asks for "everything after N", so no key is ever dropped between polls
@@ -445,9 +446,20 @@ public class TouchSwipe : NativeWindow {
   static readonly List<KeyValuePair<long, string>> evLog = new List<KeyValuePair<long, string>>();
   static readonly List<long> evAt = new List<long>();
   static long evSeq = 0;
+  static void ToggleDesktop() { try { var sh = Type.GetTypeFromProgID("Shell.Application"); var o = Activator.CreateInstance(sh); sh.InvokeMember("ToggleDesktop", System.Reflection.BindingFlags.InvokeMethod, null, o, null); } catch { } }
+  // the Windows key: Launchpad from anywhere; pressed again, Launchpad closes and the windows it moved aside come back
+  static void WinToggle() {
+    if (LpOpen) { LpOpen = false; Send("{\"t\":\"toggle\"}"); if (lpShowedDesk) { lpShowedDesk = false; System.Threading.Thread.Sleep(250); ToggleDesktop(); } }
+    else if (!SignalOverlay()) OpenLaunchpad();                                     // Launchpad over your windows (overlay.ps1); the desktop one if that isn't running
+  }
+  static System.Threading.EventWaitHandle ovSignal;
+  static bool SignalOverlay() {
+    try { if (ovSignal == null) ovSignal = System.Threading.EventWaitHandle.OpenExisting("Local\\ShadowLaunchpadToggle"); return ovSignal.Set(); }
+    catch { ovSignal = null; return false; }
+  }
   public static void OpenLaunchpad() {
     if (DeskState() == 0) {
-      try { var sh = Type.GetTypeFromProgID("Shell.Application"); var o = Activator.CreateInstance(sh); sh.InvokeMember("ToggleDesktop", System.Reflection.BindingFlags.InvokeMethod, null, o, null); } catch { }
+      ToggleDesktop(); lpShowedDesk = true;
       System.Threading.Thread.Sleep(380);
     }
     FocusDesktop();
@@ -635,6 +647,15 @@ public class TouchSwipe : NativeWindow {
     string json; try { json = YtSearch(req.QueryString["q"] ?? "", req.QueryString["gl"] ?? "", req.QueryString["f"] == "v" ? "EgWKAQIQAWoMEA4QChADEAQQCRAF" : null); } catch (Exception e) { Log("ytm: " + e.Message); res.StatusCode = 502; res.Close(); return; }
     var bytes = Encoding.UTF8.GetBytes(json); res.ContentType = "application/json; charset=utf-8"; res.StatusCode = 200; res.OutputStream.Write(bytes, 0, bytes.Length); res.Close();
   }
+  // the colours of the video as it plays, read straight off the screen where the wallpaper shows it (the player is YouTube's,
+  // so the page can't read its pixels): 12 columns, left to right, each the average of its slice
+  static void ServeVCol(System.Net.HttpListenerRequest req, System.Net.HttpListenerResponse res) {
+    int x, y, w, h; string json = "{}";
+    if (int.TryParse(req.QueryString["x"], out x) && int.TryParse(req.QueryString["y"], out y) && int.TryParse(req.QueryString["w"], out w) && int.TryParse(req.QueryString["h"], out h) && w > 8 && h > 8) {
+      try { json = VCol.Cols(x, y, w, h); } catch (Exception e) { Log("vcol: " + e.Message); }
+    }
+    var bytes = Encoding.UTF8.GetBytes(json); res.ContentType = "application/json"; res.StatusCode = 200; res.OutputStream.Write(bytes, 0, bytes.Length); res.Close();
+  }
   static void ServeWait(System.Net.HttpListenerContext ctx, string token) {
     var req = ctx.Request; var res = ctx.Response;
     res.AddHeader("Access-Control-Allow-Origin", "*"); res.AddHeader("Cache-Control", "no-store");
@@ -647,6 +668,7 @@ public class TouchSwipe : NativeWindow {
     if (req.Url.AbsolutePath == "/ytsbimg") { ServeYtSbImg(req, res); return; }
     if (req.Url.AbsolutePath == "/embed") { ServeEmbed(req, res, token); return; }
     if (req.Url.AbsolutePath == "/lpopen") { res.StatusCode = 204; res.Close(); OpenLaunchpad(); return; }
+    if (req.Url.AbsolutePath == "/vcol") { ServeVCol(req, res); return; }   // the video's colours, live, for the stripes' backlight
     if (req.Url.AbsolutePath != "/wait") { res.StatusCode = 404; res.Close(); return; }
     long since; if (!long.TryParse(req.QueryString["since"], out since)) since = -1;
     Seen();
@@ -726,6 +748,18 @@ public class TouchSwipe : NativeWindow {
           int vk = Marshal.ReadInt32(lp, 0), scan = Marshal.ReadInt32(lp, 4), flags = Marshal.ReadInt32(lp, 8), msg = (int)wp;
           if ((flags & 0x10) != 0) return CallNextHookEx(kbHook, code, wp, lp);                               // injected: leave alone
           bool down = msg == 0x100 || msg == 0x104, up = msg == 0x101 || msg == 0x105;
+          // The Windows key pressed and released on its own: Launchpad instead of Start. The key itself is never blocked
+          // (Win+E, Win+D... all still work); a do-nothing key tapped just before it lifts tells Windows a shortcut was
+          // used, so Start stays shut. (Ctrl+Esc still opens Start.)
+          if (WinKey && (vk == 0x5B || vk == 0x5C)) {
+            if (down) { if (!winHeld) { winHeld = true; winAlone = true; } }
+            else if (up) {
+              winHeld = false;
+              if (winAlone) { winAlone = false; keybd_event(0xE8, 0, 0, UIntPtr.Zero); keybd_event(0xE8, 0, 2, UIntPtr.Zero); System.Threading.ThreadPool.QueueUserWorkItem(_ => WinToggle()); }
+            }
+            return CallNextHookEx(kbHook, code, wp, lp);
+          }
+          if (down && winHeld) winAlone = false;                                                               // Win + another key: a shortcut, not Launchpad
           if (KeyLog && down && !(vk >= 0x30 && vk <= 0x5A) && vk != 0x20 && !(vk >= 0xBA && vk <= 0xE2) && !(vk >= 0x08 && vk <= 0x2E))
             Log("key vk=0x" + vk.ToString("X2") + " scan=0x" + scan.ToString("X2") + " flags=0x" + flags.ToString("X2"));
           if (up) { if (vk == 0x20) spaceDown = false; lock (rep) rep.Remove(vk); lock (held) { if (held.Remove(vk)) return (IntPtr)1; } return CallNextHookEx(kbHook, code, wp, lp); }
@@ -885,9 +919,41 @@ public class TouchSwipe : NativeWindow {
     startX.Clear(); lastX.Clear(); fired = false;
   }
 }
+public static class VCol {
+  [DllImport("user32.dll")] static extern IntPtr GetDC(IntPtr h);
+  [DllImport("user32.dll")] static extern int ReleaseDC(IntPtr h, IntPtr dc);
+  [DllImport("gdi32.dll")] static extern IntPtr CreateCompatibleDC(IntPtr dc);
+  [DllImport("gdi32.dll")] static extern IntPtr CreateCompatibleBitmap(IntPtr dc, int w, int h);
+  [DllImport("gdi32.dll")] static extern IntPtr SelectObject(IntPtr dc, IntPtr o);
+  [DllImport("gdi32.dll")] static extern bool DeleteObject(IntPtr o);
+  [DllImport("gdi32.dll")] static extern bool DeleteDC(IntPtr dc);
+  [DllImport("gdi32.dll")] static extern bool StretchBlt(IntPtr d, int dx, int dy, int dw, int dh, IntPtr s, int sx, int sy, int sw, int sh, uint op);
+  [DllImport("gdi32.dll")] static extern int SetStretchBltMode(IntPtr dc, int m);
+  [DllImport("gdi32.dll")] static extern int GetDIBits(IntPtr dc, IntPtr bmp, uint start, uint lines, byte[] bits, ref BMI bi, uint usage);
+  [StructLayout(LayoutKind.Sequential)] struct BMI { public int size, w, h; public short planes, bits; public int comp, img, xp, yp, used, imp, c0; }
+  public static string Cols(int x, int y, int w, int h) {
+    const int CW = 12, CH = 6;
+    IntPtr sdc = GetDC(IntPtr.Zero), mdc = CreateCompatibleDC(sdc), bmp = CreateCompatibleBitmap(sdc, CW, CH), old = SelectObject(mdc, bmp);
+    SetStretchBltMode(mdc, 4); StretchBlt(mdc, 0, 0, CW, CH, sdc, x, y, w, h, 0x00CC0020);   // HALFTONE: a true average of each slice
+    SelectObject(mdc, old);
+    var bi = new BMI { size = 40, w = CW, h = -CH, planes = 1, bits = 32 }; var px = new byte[CW * CH * 4];
+    GetDIBits(mdc, bmp, 0, CH, px, ref bi, 0);
+    DeleteObject(bmp); DeleteDC(mdc); ReleaseDC(IntPtr.Zero, sdc);
+    var sb = new StringBuilder("{\"c\":[");
+    for (int c = 0; c < CW; c++) {
+      int r = 0, g = 0, b = 0; for (int k = 0; k < CH; k++) { int i = (k * CW + c) * 4; b += px[i]; g += px[i + 1]; r += px[i + 2]; }
+      if (c > 0) sb.Append(','); sb.Append('[').Append(r / CH).Append(',').Append(g / CH).Append(',').Append(b / CH).Append(']');
+    }
+    return sb.Append("]}").ToString();
+  }
+}
 '@
 [TouchSwipe]::LogPath = $null   # set to a file path to debug swipe detection
+if (Test-Path (Join-Path $PSScriptRoot 'winkey.off')) { [TouchSwipe]::WinKey = $false }   # turned off with the dock's Windows button
 [TouchSwipe]::Start()
+# Launchpad over your open windows (the Windows key opens it): its own always-ready window, started once
+$overlay = Join-Path $PSScriptRoot 'overlay.ps1'
+if (Test-Path $overlay) { Start-Process powershell.exe -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-STA', '-File', "`"$overlay`"" -WindowStyle Hidden }
 [TouchSwipe]::StartEvents($port + 1, $token)          # 47614: the instant key / swipe channel
 
 $iconDir = Join-Path $PSScriptRoot 'icons'; New-Item -ItemType Directory -Force $iconDir | Out-Null
@@ -1083,6 +1149,11 @@ while ($listener.IsListening) {
         if ($req.QueryString['t'] -ne $token) { $status = 403 }
         elseif ($req.Url.AbsolutePath -eq '/state') { Send-Json $res ('{"desktop":' + ($(if ([TouchSwipe]::DeskState() -gt 0) { 'true' } else { 'false' })) + ',"covered":' + ($(if ([Fg]::Covered()) { 'true' } else { 'false' })) + '}'); continue }
         elseif ($req.Url.AbsolutePath -eq '/apps')  { Send-Json $res (Apps-Json); continue }
+        elseif ($req.Url.AbsolutePath -eq '/winkey') {                    # the dock's Windows button: Windows key opens Launchpad, on / off (remembered)
+            $off = Join-Path $PSScriptRoot 'winkey.off'; $on = $req.QueryString['on']
+            if ($on -eq '1') { [TouchSwipe]::WinKey = $true; Remove-Item $off -ErrorAction SilentlyContinue } elseif ($on -eq '0') { [TouchSwipe]::WinKey = $false; Set-Content $off '' }
+            Send-Json $res ('{"on":' + $(if ([TouchSwipe]::WinKey) { 'true' } else { 'false' }) + '}'); continue
+        }
         elseif ($req.Url.AbsolutePath -eq '/media') { Send-Json $res (Media-Json); continue }
         elseif ($req.Url.AbsolutePath -eq '/mediaart') {
             $a = Media-Art
@@ -1097,6 +1168,16 @@ while ($listener.IsListening) {
         elseif ($req.Url.AbsolutePath -eq '/icon') {
             $png = Lp-Icon $req.QueryString['k']
             if ($png) { Send-File $res $png 'image/png'; continue }
+        }
+        elseif ($req.Url.AbsolutePath -eq '/power') {                     # Launchpad's power button (over your apps): sleep / lock / restart / shut down
+            $act = $req.QueryString['a']; $res.StatusCode = 204; $res.AddHeader('Access-Control-Allow-Origin', '*'); $res.Close()
+            switch ($act) {
+                'lock'     { Start-Process rundll32.exe 'user32.dll,LockWorkStation' }
+                'sleep'    { Add-Type -AssemblyName System.Windows.Forms; [void][System.Windows.Forms.Application]::SetSuspendState([System.Windows.Forms.PowerState]::Suspend, $false, $false) }
+                'restart'  { Start-Process shutdown.exe '/r /t 0' -WindowStyle Hidden }
+                'shutdown' { Start-Process shutdown.exe '/s /t 0' -WindowStyle Hidden }
+            }
+            continue
         }
         elseif ($req.Url.AbsolutePath -eq '/launch') {
             $a = Lp-Find $req.QueryString['k']

@@ -9,6 +9,9 @@ helper/google-token.dat
 helper/google-library.json
 helper/google-state.json
 helper/*.log
+helper/winkey.off
+helper/peek.test
+helper/peek.png
 *.log
 setup-log.txt
 fonts-log.txt

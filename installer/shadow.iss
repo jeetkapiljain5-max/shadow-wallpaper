@@ -1,6 +1,6 @@
 ; Shadow Wallpaper - Inno Setup script. Build: ISCC.exe installer\shadow.iss  (output in dist\)
 ; Per-user install (no admin), silent-friendly for winget: /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
-#define AppVer "1.0.0"
+#define AppVer "1.0.1"
 #ifndef Publisher
   #define Publisher "Shadow Wallpaper"
 #endif

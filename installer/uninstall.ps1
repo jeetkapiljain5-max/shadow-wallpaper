@@ -3,7 +3,7 @@ param([Parameter(Mandatory)] [string]$AppDir)
 $ErrorActionPreference = 'SilentlyContinue'
 $helper = Join-Path $AppDir 'helper'
 # stop the helper and anything it started (sign-in / font jobs)
-Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" | Where-Object { $_.CommandLine -match [regex]::Escape($AppDir) } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
+Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" | Where-Object { $_.ProcessId -ne $PID -and $_.CommandLine -match [regex]::Escape($AppDir) } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }   # (not this script itself)
 # take the wallpaper out of Lively (Lively falls back to its own wallpaper choice)
 $lively = @("$env:ProgramFiles\Lively Wallpaper\Lively.exe", "$env:LOCALAPPDATA\Programs\Lively Wallpaper\Lively.exe") | Where-Object { Test-Path $_ } | Select-Object -First 1
 $lib = Join-Path $env:LOCALAPPDATA 'Lively Wallpaper\Library'

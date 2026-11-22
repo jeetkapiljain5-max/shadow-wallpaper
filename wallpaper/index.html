@@ -26,7 +26,7 @@
   body.music #dock{opacity:0 !important;pointer-events:none !important;visibility:hidden}
   #mdock{position:fixed;left:0;right:0;bottom:8.5vh;display:flex;justify-content:center;align-items:center;gap:2.6vh;z-index:7;pointer-events:none;visibility:hidden;
        opacity:0;transform:translateY(1.2vh);transition:opacity .35s ease,transform .5s cubic-bezier(.2,.9,.25,1)}
-  body.music #mdock{visibility:visible}
+  body.music #mdock{visibility:visible;opacity:1;pointer-events:auto;transform:none}   /* music on: the controls stay */
   body.npsolo #mdock{bottom:auto;top:var(--npEnd,80vh)}          /* cover or video alone: controls right under it */
   body.npsolo.npvideo #mdock{opacity:1;pointer-events:auto;transform:none}   /* a video with no lyrics: the controls stay */
   #mdock{transition:opacity .35s ease,transform .5s cubic-bezier(.2,.9,.25,1),top .8s cubic-bezier(.2,.9,.25,1)}

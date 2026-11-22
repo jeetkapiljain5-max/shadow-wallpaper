@@ -12,6 +12,9 @@ winget install jeetkapiljain5-max.ShadowWallpaper
 
 Or download `Shadow-Wallpaper-Setup.exe` from [Releases](../../releases) and run it. It installs for your user only (no admin).
 
+> **Tip:** for the cleanest look, pair it with [TranslucentTB](https://github.com/TranslucentTB/TranslucentTB), which makes the taskbar see-through:
+> `winget install CharlesMilette.TranslucentTB`
+
 ## What it does
 
 **Wallpaper**

@@ -208,7 +208,10 @@ public static class LiveBg {
     # the browser, placed straight on the window (created on the window's own thread, step by step)
     $boot = New-Object System.Windows.Forms.Timer; $boot.Interval = 20
     $boot.add_Tick({
-        if (-not $script:envT) { $script:envT = [Microsoft.Web.WebView2.Core.CoreWebView2Environment]::CreateAsync($null, (Join-Path $env:LOCALAPPDATA 'Shadow\overlay-webview'), $null); return }
+        if (-not $script:envT) { $script:envT = [Microsoft.Web.WebView2.Core.CoreWebView2Environment]::CreateAsync($null, (Join-Path (Split-Path $PSScriptRoot -Parent) 'overlay-webview'), $null); return }
+        if ($script:envT.IsFaulted) { Log ('browser start failed, retrying: ' + $script:envT.Exception.InnerException.Message); $script:envT = $null; $boot.Interval = 2000; return }
+        if ($script:ctlT -and $script:ctlT.IsFaulted) { Log ('browser view failed, retrying: ' + $script:ctlT.Exception.InnerException.Message); $script:ctlT = $null; $script:envT = $null; $boot.Interval = 2000; return }
+        $boot.Interval = 20
         if (-not $script:ctlT) { if ($script:envT.IsCompleted) { $script:ctlT = $script:envT.Result.CreateCoreWebView2ControllerAsync($form.Handle) }; return }
         if (-not $script:ctlT.IsCompleted) { return }
         $boot.Stop()
@@ -245,6 +248,8 @@ public static class LiveBg {
         if ($t.Status -eq 'RanToCompletion' -and $script:open) { [void]$script:ctl.CoreWebView2.ExecuteScriptAsync("window.__overlayBgSet && __overlayBgSet('" + $t.Result + "')") }
     })
     $peek = New-Object System.Windows.Forms.Timer; $peek.Interval = 1100
+    $peekRun = New-Object System.Windows.Forms.Timer; $peekRun.Interval = 900
+    $peekRun.add_Tick({ $peekRun.Stop(); [void]$script:ctl.CoreWebView2.ExecuteScriptAsync($script:peekJs) })
     $peek.add_Tick({ $peek.Stop(); try { $fs = [IO.File]::Create((Join-Path $PSScriptRoot 'peek.png')); $script:peekT = $script:ctl.CoreWebView2.CapturePreviewAsync([Microsoft.Web.WebView2.Core.CoreWebView2CapturePreviewImageFormat]::Png, $fs); $script:peekFs = $fs; $peekDone.Start() } catch { Log ('peek: ' + $_.Exception.Message) } })
     $peekDone = New-Object System.Windows.Forms.Timer; $peekDone.Interval = 50
     $peekDone.add_Tick({ if ($script:peekT.IsCompleted) { $peekDone.Stop(); $script:peekFs.Close(); Log 'peek saved' } })
@@ -273,7 +278,10 @@ public static class LiveBg {
         [Ov]::Front($form.Handle); $script:ctl.MoveFocus([Microsoft.Web.WebView2.Core.CoreWebView2MoveFocusReason]::Programmatic)   # keys go to Launchpad straight away
         $failsafe.Stop(); $failsafe.Start()
         $refocus.Start(); Log 'opened'
-        if (Test-Path (Join-Path $PSScriptRoot 'peek.test')) { $peek.Start() }   # (testing) a picture of the page itself, since screenshots can't see this window
+        if (Test-Path (Join-Path $PSScriptRoot 'peek.test')) {          # (testing) optionally run peek.js on the page first, then take the picture
+            $pj = Join-Path $PSScriptRoot 'peek.js'; if (Test-Path $pj) { $script:peekJs = Get-Content $pj -Raw; $peekRun.Start(); $peek.Interval = 3600 } else { $peek.Interval = 1100 }
+            $peek.Start()
+        }   # (testing) a picture of the page itself, since screenshots can't see this window
     })
     $form.add_Shown({ [Ov]::Round($form.Handle); [void][Ov]::Backdrop($form.Handle, $false); Log ('left out of captures: ' + [LiveBg]::Exclude($form.Handle)); $boot.Start(); $poll.Start(); $outside.Start() })   # stays full screen until the browser is placed on it, then shrinks
     Log "starting (WebView2 from $wv, page from $WallDir)"

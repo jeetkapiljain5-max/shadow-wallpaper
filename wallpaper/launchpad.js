@@ -36,12 +36,23 @@
   html.overlay #lpIn{scale:.82}                                     /* over your apps: a smaller Launchpad, sitting a little lower */
   html.overlay #lpSB{margin-top:9vh;background:rgba(255,255,255,.13);box-shadow:inset 0 0 0 1px rgba(255,255,255,.22)}   /* over your apps: see-through, like it looks while the genie pours in */
   html.overlay .lpi > span{display:none}                            /* over your apps: icons only */
+  html.overlay .lpi{align-self:center}                              /* ...so the highlight hugs the icon (no room for a name that isn't there) */
+  html.overlay #lp.q .lpi.sel{z-index:3}
+  html.overlay #lp.q .lpi.sel > span{display:block;position:absolute;left:50%;top:calc(100% - .2vh);transform:translateX(-50%);max-width:15vh;pointer-events:none}
+  html.overlay #lp.q .lpi.sel::before{bottom:-2.6vh}
+  /* searching over your apps: the bar and the answers take the panel's whole width, and a long answer (wiki) fills its height and scrolls */
+  #lp.q #lpSB,#lp.q #lpAns{width:min(92vw,126vh)}
+  #lp .ar .aw{max-height:62vh;overflow-y:auto;overscroll-behavior:contain;padding-right:1vh;cursor:grab}
+  #lp.bigAns .ar .aw{height:62vh}
+  #lp .ar .aw::-webkit-scrollbar{width:.6vh}
+  .ar .aw h4{margin:1.8vh 0 .7vh;font:600 2vh "Shadow SF",sans-serif;color:#fff}
+  #lp .ar .aw::-webkit-scrollbar-thumb{background:rgba(255,255,255,.28);border-radius:1vh}
+  #lp .ar .aw::-webkit-scrollbar-track{background:transparent}
   /* over your apps it opens like a Mac app: zooms up out of the bottom of the screen (where Start is) and back down into it -
      the overlay window runs the same curves, so the frosted panel zooms with it */
   html.overlay #lp:not(.fopen) #lpIn{transform:none}
   /* power (over your apps only): hidden in the bottom-right corner of the app grid, shows while the pointer is there */
   #lpIn{position:relative}
-  html:not(.overlay) #lpPwrZone{display:none}
   #lpPwrZone{position:absolute;right:calc((100% - min(92vw,126vh)) / 2);top:89vh;width:13vh;height:7vh;z-index:8}
   #lpPwr{position:absolute;right:1.4vh;bottom:1.4vh;width:3.6vh;height:3.6vh;border:0;padding:0;background:none;outline:none;cursor:pointer;
       opacity:0;transform:scale(.8) translateY(.5vh);transition:opacity .3s ease,transform .45s ${EASE}}
@@ -72,7 +83,7 @@
 
   /* liquid-glass search capsule (macOS): icon + "Search" centred as one group; when you type the group glides left */
   #lpSB{position:relative;margin-top:7vh;width:40vh;height:5.4vh;flex:none;border-radius:99px;transition:width .42s ${EASE}}
-  #lp.q #lpSB,#lp.wide #lpSB{width:74vh}
+  #lp.q #lpSB,#lp.wide #lpSB{width:min(92vw,126vh)}                 /* searching: the bar spans the app grid's width */
   .lgCanvas{position:absolute;pointer-events:none;z-index:-1}
   .lgHost{isolation:isolate}
   #lpSB.nogl{background:linear-gradient(180deg,rgba(255,255,255,.18),rgba(255,255,255,.08));box-shadow:inset 0 .07vh 0 rgba(255,255,255,.5),inset 0 0 0 .07vh rgba(255,255,255,.18),0 .6vh 2vh rgba(0,0,0,.2)}
@@ -187,6 +198,22 @@
   .fgrid img{width:100% !important;height:auto !important;aspect-ratio:1;object-fit:contain;filter:none !important}
   #lpBar{position:absolute;z-index:46;top:7.6vh;right:4.5vw;display:none;gap:1vh}
   #lp.wiggle #lpBar{display:flex}
+  #lpSizeBar{position:absolute;z-index:46;top:7.6vh;left:4.5vw;display:none}
+  #lp.wiggle #lpSizeBar{display:flex}
+  #lpSize{display:flex;align-items:center;gap:.9vh}
+  #lpSize i{width:1.9vh;height:1.9vh;flex:none;background:currentColor;opacity:.95;
+      -webkit-mask:var(--szi) center/contain no-repeat;mask:var(--szi) center/contain no-repeat}
+  #lpSize{--szi:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect x='3' y='3' width='7.5' height='7.5' rx='2'/%3E%3Crect x='13.5' y='3' width='7.5' height='7.5' rx='2'/%3E%3Crect x='3' y='13.5' width='7.5' height='7.5' rx='2'/%3E%3Crect x='13.5' y='13.5' width='7.5' height='7.5' rx='2'/%3E%3C/svg%3E")}
+  #lp.big #lpSize{--szi:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect x='3' y='3' width='4.6' height='4.6' rx='1.2'/%3E%3Crect x='9.7' y='3' width='4.6' height='4.6' rx='1.2'/%3E%3Crect x='16.4' y='3' width='4.6' height='4.6' rx='1.2'/%3E%3Crect x='3' y='9.7' width='4.6' height='4.6' rx='1.2'/%3E%3Crect x='9.7' y='9.7' width='4.6' height='4.6' rx='1.2'/%3E%3Crect x='16.4' y='9.7' width='4.6' height='4.6' rx='1.2'/%3E%3Crect x='3' y='16.4' width='4.6' height='4.6' rx='1.2'/%3E%3Crect x='9.7' y='16.4' width='4.6' height='4.6' rx='1.2'/%3E%3Crect x='16.4' y='16.4' width='4.6' height='4.6' rx='1.2'/%3E%3C/svg%3E")}
+  /* large icons: bigger, and no names (like iPadOS) */
+  #lp.big .ic{width:11.4vh;height:11.4vh;border-radius:2.6vh}
+  html:not(.overlay) #lp.big .ic{width:10.4vh;height:10.4vh;border-radius:2.38vh}   /* on the wallpaper: a bit smaller, more space around each */
+  #lp.big .lpi > span{display:none}
+  #lp.big .lpi{align-self:center}
+  #lp.sizing .ic{transition:width .4s ${EASE},height .4s ${EASE},border-radius .4s ${EASE},transform .2s ${EASE},filter .2s}
+  /* over your apps the corners are the panel's, not the screen's */
+  html.overlay #lpSizeBar{top:calc(var(--pt,8vh) + 1.6vh);left:calc(var(--pl,4.5vw) + 1.8vh)}
+  html.overlay #lpBar{top:calc(var(--pt,8vh) + 1.6vh);right:auto;left:calc(var(--pl,0px) + var(--pw,90vw) - 1.8vh);transform:translateX(-100%)}
   .lpPill{position:relative;padding:1vh 2.3vh;border-radius:99px;background:rgba(255,255,255,.17);color:#fff;font:600 1.55vh "Shadow SF",sans-serif;cursor:pointer;user-select:none;text-shadow:0 .05vh .2vh rgba(0,0,0,.3);
       box-shadow:inset 0 0 0 .07vh rgba(255,255,255,.3),0 .4vh 1.2vh rgba(0,0,0,.15)}
   .lpPill:hover{background:rgba(255,255,255,.24)}
@@ -248,13 +275,14 @@
         <div class="mi" role="menuitem" data-p="restart"><svg viewBox="0 0 24 24"><path d="M19.6 12.4a7.6 7.6 0 1 1-2.3-6"/><path d="M19.6 3.6v4.6H15"/></svg>Restart</div>
         <div class="mi" role="menuitem" data-p="shutdown"><svg viewBox="0 0 24 24"><path d="M12 3.2v8"/><path d="M6.4 6.6a7.6 7.6 0 1 0 11.2 0"/></svg>Shut down</div>
       </div><button id="lpPwr" aria-label="Power"><svg viewBox="0 0 24 24"><path d="M12 3.2v8"/><path d="M6.4 6.6a7.6 7.6 0 1 0 11.2 0"/></svg></button></div></div>
+      <div id="lpSizeBar"><div class="lpPill" id="lpSize"><i></i><span>Large icons</span></div></div>
       <div id="lpBar"><div class="lpPill" id="lpRestore" style="display:none"><span></span></div><div class="lpPill" id="lpDone"><span>Done</span></div></div>
       <div id="lpFolder"><div id="lpFPanel"><input id="lpFName" spellcheck="false" autocomplete="off"><div id="lpFGrid"></div></div></div>
       <div id="lpMenu"><div id="lpMenuIn"></div></div><div id="lpDlg"><div id="lpDlgBox"><div id="lpDlgIn"></div></div></div><div id="lpToast"></div></div>`);
   const $ = id => document.getElementById(id);
   const lp = $('lp'), bg = $('lpBg'), bgx = bg.getContext('2d'), search = $('lpSearch'), track = $('lpTrack'), dots = $('lpDots'), empty = $('lpEmpty'), ansEl = $('lpAns');
   { const wb = document.getElementById('lpWinZone'); if (wb) lp.appendChild(wb); }   // the Windows button lives in Launchpad's bottom corner
-  const sb = $('lpSB'); let glass = null, gAns = null, gMenu = null, gDone = null, gRestore = null, gDlg = null; const glasses = [];
+  const sb = $('lpSB'); let glass = null, gAns = null, gMenu = null, gDone = null, gSize = null, gRestore = null, gDlg = null; const glasses = [];
   ansEl.innerHTML = '<div id="lpAnsRows"></div>'; const ansRows = $('lpAnsRows');
   sb.insertAdjacentHTML('beforeend', '<i id="lpSelHi"></i><i id="lpCaret"></i><span id="lpMeas"></span>');
   (() => { const sc = document.createElement('script'); sc.src = 'glassbar.js' + (location.protocol.startsWith('http') ? '?v=' + Date.now() : '');
@@ -265,6 +293,7 @@
       gAns = mk(ansEl, { radius: () => vh(2.6), tint: .1, frost: 0, shadow: .12, pad: 30, disp: 18, rim: .5 });
       gMenu = mk($('lpMenu'), { radius: () => vh(2.4), tint: .05, frost: 1, shadow: .3, pad: 44, glare: 1.2, glareRange: 14, disp: 10, rim: .25, rimWidth: 22, rimAmt: .22 });
       gDone = mk($('lpDone'), { radius: 'pill', tint: .09, shadow: .1, stretch: true });
+      gSize = mk($('lpSize'), { radius: 'pill', tint: .09, shadow: .1, stretch: true });
       gRestore = mk($('lpRestore'), { radius: 'pill', tint: .07, shadow: .1, stretch: true });
       gDlg = mk($('lpDlgBox'), { radius: () => vh(2.6), tint: .05, frost: 1, shadow: .38, pad: 50 });
       window.__lpGlass = glass; window.__lpGlasses = glasses; if (open) glasses.forEach(g => g.animate(400));
@@ -490,7 +519,7 @@
       el.style.setProperty('--jd', (0.22 + Math.random() * 0.1).toFixed(3) + 's'); el.style.setProperty('--jo', (-Math.random() * 0.3).toFixed(3) + 's');
       el.style.setProperty('--ja', (0.8 + Math.random() * 0.4).toFixed(2)); el.style.setProperty('--bd', (Math.min(i % 35, 20) * 0.012).toFixed(3) + 's');
     });
-    lp.classList.add('wiggle'); updateBar(); requestAnimationFrame(() => { gDone?.pop(.6, 520, .62); gRestore?.pop(.6, 520, .62); });
+    lp.classList.add('wiggle'); updateBar(); requestAnimationFrame(() => { gDone?.pop(.6, 520, .62); gRestore?.pop(.6, 520, .62); gSize?.pop(.6, 520, .62); });
   }
   function exitWiggle() { if (!wiggle) return; wiggle = false; lp.classList.remove('wiggle'); closeMenu(); stopRename(); }
   function updateBar() { const n = layout?.hidden?.length || 0; $('lpRestore').style.display = n ? '' : 'none'; $('lpRestore').querySelector('span').textContent = `Show ${n} hidden app${n === 1 ? '' : 's'}`; gRestore?.animate(200); }
@@ -759,6 +788,7 @@
   }
 
   function show() {
+    fixedPanel = null;
     try { loadYtLib(); } catch (_) {}
     if (open || window.TM?.setting) return;
     open = window.lpOpen = true; fastState(1);
@@ -804,7 +834,9 @@
   window.__overlayGo = () => { show(); sendPanel(true); };
   let lastPanel = '';
   // Launchpad's panel over your apps (search bar + answers + app grid + dots + power, an open folder / menu), padded, in screen pixels
+  let fixedPanel = null;                                               // over your apps: the panel's size, fixed while it's open
   function panelPx() {
+    if (window.OVERLAY && open && fixedPanel) return fixedPanel;
     const els = ['lpSB', 'lpAns', 'lpView', 'lpDots', 'lpPwrZone', 'lpFPanel', 'lpMenuIn', 'lpDlgBox'].map(id => $(id)).filter(e => e && e.offsetParent !== null);
     let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
     // where things will be once the zooms settle (Launchpad's own around the bottom, the inner one around the middle)
@@ -819,7 +851,9 @@
     }
     if (x1 < x0) return null;
     const pad = innerHeight * .045, d = devicePixelRatio || 1;
-    return [x0 - pad, y0 - pad, x1 - x0 + pad * 2, y1 - y0 + pad * 2, innerHeight * .045].map(n => Math.round(Math.max(0, n) * d));
+    const px = [x0 - pad, y0 - pad, x1 - x0 + pad * 2, y1 - y0 + pad * 2, innerHeight * .045].map(n => Math.round(Math.max(0, n) * d));
+    if (window.OVERLAY && open && !search.value && !lp.classList.contains('q') && !lp.classList.contains('fopen')) fixedPanel = px;   // measured in the plain grid view
+    return px;
   }
   /* Launchpad's own frosted glass over your apps: the overlay sends a small live picture of what is behind the panel; it is
      blurred and tinted here, with properly round corners (Windows' own blur can't be shaped, and drew a box and a shadow) */
@@ -849,7 +883,8 @@
       if (busy) { next = d.slice(3); return; } busy = true; im.src = d.slice(3);
     });
     return {
-      place(px) { const d = devicePixelRatio || 1; Object.assign(box.style, { left: px[0] / d + 'px', top: px[1] / d + 'px', width: px[2] / d + 'px', height: px[3] / d + 'px' }); },
+      place(px) { const d = devicePixelRatio || 1; Object.assign(box.style, { left: px[0] / d + 'px', top: px[1] / d + 'px', width: px[2] / d + 'px', height: px[3] / d + 'px' });
+        lp.style.setProperty('--pl', px[0] / d + 'px'); lp.style.setProperty('--pt', px[1] / d + 'px'); lp.style.setProperty('--pw', px[2] / d + 'px'); },
       canvas: c, get ready() { return have; }, reset() { have = false; next = null; }
     };
   })();
@@ -1020,10 +1055,33 @@
 
   // the power menu closes on any press that isn't on it or its button (before anything else gets the press)
   document.addEventListener('pointerdown', e => { if (!e.target.closest('#lpPwr,#lpPwrMenu')) $('lpPwrZone').classList.remove('menu'); }, true);
+  // large icons (no names) <-> small icons with names; remembered on this PC
+  const bigIcons = on => {
+    lp.classList.add('sizing'); lp.classList.toggle('big', on); clearTimeout(bigIcons.t); bigIcons.t = setTimeout(() => lp.classList.remove('sizing'), 450);
+    $('lpSize').querySelector('span').textContent = on ? 'Small icons' : 'Large icons';
+    try { localStorage.setItem('lpBigIcons', on ? '1' : '0'); } catch (_) {}
+    setTimeout(() => gSize?.pop?.(.5, 420, .6), 10);
+  };
+  { let on = false; try { on = localStorage.getItem('lpBigIcons') === '1'; } catch (_) {} lp.classList.toggle('big', on); $('lpSize').querySelector('span').textContent = on ? 'Small icons' : 'Large icons'; }
+  $('lpSize').addEventListener('click', e => { e.stopPropagation(); bigIcons(!lp.classList.contains('big')); });
+  // a long answer scrolls with the wheel (over your apps), by dragging it, or with Page Up / Page Down (the wallpaper gets no wheel)
+  let awDrag = null;
+  ansEl.addEventListener('mousedown', e => { const aw = e.target.closest('.aw'); if (!aw || e.button !== 0) return; awDrag = { aw, y: e.clientY, top: aw.scrollTop, moved: false }; });
+  addEventListener('mousemove', e => { if (!awDrag) return; const dy = e.clientY - awDrag.y; if (Math.abs(dy) > 4) awDrag.moved = true; awDrag.aw.scrollTop = awDrag.top - dy; });
+  addEventListener('mouseup', () => { if (awDrag?.moved) { suppressAnsClick = true; setTimeout(() => suppressAnsClick = false, 0); } awDrag = null; });
+  let suppressAnsClick = false;
+  ansEl.addEventListener('click', e => { if (suppressAnsClick) { e.stopImmediatePropagation(); e.preventDefault(); } }, true);
+  window.__lpScrollAns = dir => {                                      // eased by hand (smooth scrolling isn't available everywhere this runs)
+    const aw = ansEl.querySelector('.aw'); if (!aw) return false;
+    const from = aw.scrollTop, to = Math.max(0, Math.min(aw.scrollHeight - aw.clientHeight, from + dir * aw.clientHeight * .85)), t0 = performance.now();
+    clearInterval(window.__lpScrollT);
+    window.__lpScrollT = setInterval(() => { const p = Math.min(1, (performance.now() - t0) / 320), e = 1 - Math.pow(1 - p, 3); aw.scrollTop = from + (to - from) * e; if (p >= 1) clearInterval(window.__lpScrollT); }, 16);
+    return true;
+  };
   $('lpPwr').addEventListener('click', e => { e.stopPropagation(); $('lpPwrZone').classList.toggle('menu'); });
   $('lpPwrMenu').addEventListener('click', e => {
     const mi = e.target.closest('.mi'); if (!mi) return; e.stopPropagation();
-    window.chrome?.webview?.postMessage('launch');                    // no handing the keyboard back: the PC is going to sleep / lock / restart
+    if (window.OVERLAY) window.chrome?.webview?.postMessage('launch'); // no handing the keyboard back: the PC is going to sleep / lock / restart
     hide(); setTimeout(() => call('power', { a: mi.dataset.p }), 320);   // Launchpad zooms away first
   });
   function launch(it) {                                               // macOS: the app opens while Launchpad zooms away
@@ -1766,12 +1824,17 @@
     const isWiki = /^(wiki|wikipedia|w)\s/.test(q);
     const open_ = () => { call('web', { q: term, e: 'wiki' }); hide(); };
     const e = look('wiki:' + term, async () => {
+      // the summary (title, picture, description) and the whole article, fetched side by side
+      const fullP = getJ(`https://en.wikipedia.org/w/api.php?action=query&prop=extracts&explaintext=1&redirects=1&format=json&origin=*&titles=${encodeURIComponent(term)}`).catch(() => null);
       const j = await getJ('https://en.wikipedia.org/api/rest_v1/page/summary/' + encodeURIComponent(term.replace(/ /g, '_')) + '?redirect=true').catch(() => null);
       if (j && j.extract && j.type !== 'disambiguation') {
-        try {                                                             // the article's full introduction, not just the first lines
-          const x = await getJ(`https://en.wikipedia.org/w/api.php?action=query&prop=extracts&exintro=1&explaintext=1&redirects=1&format=json&origin=*&titles=${encodeURIComponent(j.title)}`);
-          const pg = x && Object.values(x.query?.pages || {})[0]; if (pg?.extract && pg.extract.length > j.extract.length) j.full = pg.extract;
-        } catch (_) {}
+        (async () => {                                                  // the summary shows straight away; the rest of the article fills in when it arrives
+          let x = await fullP, pg = x && Object.values(x.query?.pages || {})[0];
+          if (!pg?.extract || pg.title !== j.title) {                    // a different spelling or capitals: ask again by the summary's own title
+            x = await getJ(`https://en.wikipedia.org/w/api.php?action=query&prop=extracts&explaintext=1&redirects=1&format=json&origin=*&titles=${encodeURIComponent(j.title)}`); pg = x && Object.values(x.query?.pages || {})[0];
+          }
+          if (pg?.extract && pg.extract.length > j.extract.length) { j.full = pg.extract; if (open && search.value) onQuery(); }
+        })().catch(() => {});
         return j;
       }
       // not found: ask Wikipedia's own search what was meant
@@ -1783,7 +1846,13 @@
     if (e.state === 'ok' && e.data.miss) return isWiki ? [didYouMean(e.data.fix, q.slice(0, q.length - term.length)), { ic: 'wiki', t: `Search Wikipedia for “${term}”`, s: 'en.wikipedia.org', key: 'Search', pr: 2.5, run: open_ }] : null;
     if (e.state !== 'ok') return isWiki ? [{ ic: 'wiki', t: `Search Wikipedia for “${term}”`, s: 'en.wikipedia.org', key: 'Search', pr: 2.5, run: open_ }] : null;
     const d = e.data, full = (d.full || d.extract || '').trim();
-    let body = full.length > 1900 ? full.slice(0, 1900).replace(/[^.!?]*$/, '') : full;               // end on a whole sentence
+    let text = full;
+    {                                                                   // the article up to its reference sections; section titles kept as headings
+      const stop = text.search(/\n=+\s*(See also|References|Notes|Footnotes|Citations|Sources|Bibliography|Further reading|External links)\s*=+/i);
+      if (stop > 0) text = text.slice(0, stop);
+    }
+    const lim = 9000;
+    let body = text.length > lim ? text.slice(0, lim).replace(/[^.!?]*$/, '') : text;               // end on a whole sentence
     return [{ ic: 'wiki', t: d.title, s: d.description || 'Wikipedia', key: 'Read', pr: isWiki ? 3 : 1.8, hero: true, heroSmall: true, copy: null, run: open_,
       big: { paras: body.split(/\n+/).filter(Boolean), img: d.thumbnail?.source || null } }];
   }
@@ -1874,7 +1943,7 @@
       return `<div class="ar${a.hero ? ' hero' : ''}${k === sel ? ' sel' : ''}${a.cls ? ' ' + a.cls : ''}" data-a="${k}">${icon}<div class="tx">` +
         `<div class="at"${a.hero && (a.heroSmall || String(a.t).length > 26) ? ' style="font-size:2.7vh"' : ''}${a.wrapT ? ' style="white-space:normal;font-size:1.85vh;line-height:1.35"' : ''}${a.mono ? ' style="font-family:Consolas,monospace;font-size:2.3vh"' : ''}>${esc(a.t)}</div>` +
         `${a.s ? `<div class="as${a.wrap ? ' wrap' : ''}">${esc(a.s)}</div>` : ''}` +
-        `${a.big ? `<div class="aw">${a.big.img ? `<img src="${esc(a.big.img)}" alt="">` : ''}${a.big.paras.map(t => `<p>${esc(t)}</p>`).join('')}</div>` : ''}</div><div class="ak">↵ ${esc(key)}</div></div>`;
+        `${a.big ? `<div class="aw">${a.big.img ? `<img src="${esc(a.big.img)}" alt="">` : ''}${a.big.paras.map(t => { const h = t.match(/^=+\s*(.*?)\s*=+$/); return h ? (h[1] ? `<h4>${esc(h[1])}</h4>` : '') : `<p>${esc(t)}</p>`; }).join('')}</div>` : ''}</div><div class="ak">↵ ${esc(key)}</div></div>`;
     }).join('');
   }
   function runAns(k, alt) {
@@ -1897,7 +1966,7 @@
   function onQuery() {
     const rawQ = search.value, q = rawQ.trim().toLowerCase();
     const was = lp.classList.contains('q') || lp.classList.contains('typing');
-    lp.classList.toggle('q', !!q); if (rawQ) lp.classList.add('typing', 'wide'); if (q) { exitWiggle(); if (folderOpenId) { folderOpenId = null; lp.classList.remove('fopen'); } }
+    lp.classList.toggle('q', !!q); if (rawQ) lp.classList.add('typing'); lp.classList.toggle('wide', !!rawQ); if (q) { exitWiggle(); if (folderOpenId) { folderOpenId = null; lp.classList.remove('fopen'); } }
     if (was !== (lp.classList.contains('q') || lp.classList.contains('typing'))) glass?.animate(650);   // capsule is changing width
     placeCaret();
     appHit = !!q && matchApps(q).some(a => a.r <= 1.2 || (a.r <= 3.6 && a.u < 14));     // a clear app match: name starts with it, or a favourite app
@@ -1925,7 +1994,7 @@
   lp.addEventListener('mousedown', e => {        // click on empty space closes; nothing reaches the wallpaper underneath
     e.stopPropagation();
     if (e.target.closest('#lpPwr,#lpPwrMenu')) return;
-    if (e.target.closest('#lpMenu,#lpDlgBox,#lpBar,#lpFPanel,.lpi,#lpSB,#lpDots,#lpAns')) { if (!e.target.closest('#lpMenu,.x')) closeMenu(); return; }
+    if (e.target.closest('#lpMenu,#lpDlgBox,#lpBar,#lpSizeBar,#lpFPanel,.lpi,#lpSB,#lpDots,#lpAns')) { if (!e.target.closest('#lpMenu,.x')) closeMenu(); return; }
     e.preventDefault();
     if (dlg) closeDlg(false); else if (menuFor) closeMenu(); else if (folderOpenId) closeFolder(); else if (wiggle) exitWiggle(); else if (!window.OVERLAY) hide();   // over your apps: only a click outside Launchpad closes it
   });
@@ -2003,7 +2072,7 @@
     else if ((key === 'ArrowRight' || key === 'ArrowLeft') && !search.value) goPage(page + (key === 'ArrowRight' ? 1 : -1));
     else if (key === 'ArrowLeft' || key === 'ArrowRight') edit((v, a, b) => [v, a === b ? Math.max(0, Math.min(v.length, a + (key === 'ArrowRight' ? 1 : -1))) : key === 'ArrowRight' ? b : a]);
     else if (key === 'Home' || key === 'End') edit(v => [v, key === 'Home' ? 0 : v.length]);
-    else if (key === 'PageDown' || key === 'PageUp') { if (!search.value) goPage(page + (key === 'PageDown' ? 1 : -1)); }
+    else if (key === 'PageDown' || key === 'PageUp') { if (!search.value) goPage(page + (key === 'PageDown' ? 1 : -1)); else window.__lpScrollAns?.(key === 'PageDown' ? 1 : -1); }
     else if (search.value && (key === 'ArrowDown' || (key === 'Tab' && !k.shiftKey))) setSel(sel >= ansList.length && sel + COLS < ansList.length + tiles().length ? sel + COLS : sel + 1);
     else if (search.value && (key === 'ArrowUp' || (key === 'Tab' && k.shiftKey))) setSel(sel - COLS >= ansList.length ? sel - COLS : sel - 1);
     else if (key === 'Enter') {

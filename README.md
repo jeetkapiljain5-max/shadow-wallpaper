@@ -10,7 +10,11 @@ Runs on [Lively Wallpaper](https://www.rocksdanister.com/lively/) (installed for
 winget install jeetkapiljain5-max.ShadowWallpaper
 ```
 
-Or download `Shadow-Wallpaper-Setup.exe` from [Releases](../../releases) and run it. It installs for your user only (no admin).
+Then open **Shadow Wallpaper** from Start once: it sets everything up (and installs Lively Wallpaper if you don't have it).
+A quiet install like winget's only puts the files in place; it also sets itself up the next time you sign in.
+
+Or download `Shadow-Wallpaper-Setup-<version>.exe` from [Releases](../../releases) and run it - it offers to set up straight away.
+It installs for your user only (no admin).
 
 > **Tip:** for the cleanest look, pair it with [TranslucentTB](https://github.com/TranslucentTB/TranslucentTB), which makes the taskbar see-through:
 > `winget install CharlesMilette.TranslucentTB`

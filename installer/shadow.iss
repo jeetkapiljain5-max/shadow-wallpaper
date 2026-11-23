@@ -1,6 +1,8 @@
 ; Shadow Wallpaper - Inno Setup script. Build: ISCC.exe installer\shadow.iss  (output in dist\)
 ; Per-user install (no admin), silent-friendly for winget: /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
-#define AppVer "1.0.1"
+; A silent install only puts the files in place (nothing is started); the wallpaper is set up the first time you open
+; Shadow Wallpaper from Start - or at your next sign-in. The normal installer offers to set it up on its last page.
+#define AppVer "1.0.2"
 #ifndef Publisher
   #define Publisher "Shadow Wallpaper"
 #endif
@@ -25,7 +27,7 @@ DisableReadyPage=yes
 OutputDir=..\dist
 OutputBaseFilename=Shadow-Wallpaper-Setup-{#AppVer}
 SetupIconFile=shadow.ico
-UninstallDisplayIcon={app}\shadow.ico
+UninstallDisplayIcon={app}\Shadow Wallpaper.exe
 UninstallDisplayName=Shadow Wallpaper
 Compression=lzma2/max
 SolidCompression=yes
@@ -41,14 +43,16 @@ Source: "..\helper\*"; DestDir: "{app}\helper"; Flags: recursesubdirs ignorevers
 Source: "setup.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "uninstall.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "shadow.ico"; DestDir: "{app}"; Flags: ignoreversion
+Source: "bin\Shadow Wallpaper.exe"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
-; the helper (Launchpad, lyrics, music) starts at every sign-in
-Name: "{userstartup}\Shadow Wallpaper"; Filename: "{sys}\wscript.exe"; Parameters: """{app}\helper\start-helper.vbs"""; IconFilename: "{app}\shadow.ico"
-Name: "{userprograms}\Shadow Wallpaper"; Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File ""{app}\setup.ps1"" -AppDir ""{app}"""; IconFilename: "{app}\shadow.ico"; Comment: "Re-apply Shadow Wallpaper"
+; the helper (Launchpad, lyrics, music) starts at every sign-in (the first time, it sets the wallpaper up)
+Name: "{userstartup}\Shadow Wallpaper"; Filename: "{app}\Shadow Wallpaper.exe"; Parameters: "--helper"; WorkingDir: "{app}"
+Name: "{userprograms}\Shadow Wallpaper"; Filename: "{app}\Shadow Wallpaper.exe"; WorkingDir: "{app}"; Comment: "Set up or re-apply Shadow Wallpaper"
 
 [Run]
-Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File ""{app}\setup.ps1"" -AppDir ""{app}"""; Flags: runhidden waituntilterminated; StatusMsg: "Setting up Shadow Wallpaper..."
+; only after a normal (not silent) install, as a ticked box on the last page
+Filename: "{app}\Shadow Wallpaper.exe"; Description: "Set up Shadow Wallpaper now"; Flags: postinstall skipifsilent nowait
 
 [UninstallRun]
 Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File ""{app}\uninstall.ps1"" -AppDir ""{app}"""; Flags: runhidden waituntilterminated; RunOnceId: "ShadowCleanup"

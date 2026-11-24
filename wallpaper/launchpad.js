@@ -11,7 +11,8 @@
   const L = window.LAUNCH; if (!L) return;
   const base = L.url.replace('/open/', ''), COLS = 7, ROWS = 5, PER = COLS * ROWS;
   const q2s = o => new URLSearchParams({ ...o, t: L.token }).toString();
-  const call = (path, o = {}) => fetch(`${base}/${path}?${q2s(o)}`, { cache: 'no-store', mode: 'no-cors' }).catch(() => {});
+  const call = (path, o = {}) => (path === 'launch' || path === 'web') && window.__lpFast ? window.__lpFast(path, o)
+    : fetch(`${base}/${path}?${q2s(o)}`, { cache: 'no-store', mode: 'no-cors' }).catch(() => {});
   const esc = t => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   const store = { get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch (_) { return null; } }, set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (_) {} } };
   const LOC = navigator.language || 'en-IN';
@@ -37,7 +38,11 @@
   html.overlay #lpSB{margin-top:9vh;background:rgba(255,255,255,.13);box-shadow:inset 0 0 0 1px rgba(255,255,255,.22)}   /* over your apps: see-through, like it looks while the genie pours in */
   html.overlay .lpi > span{display:none}                            /* over your apps: icons only */
   html.overlay .lpi{align-self:center}                              /* ...so the highlight hugs the icon (no room for a name that isn't there) */
-  html.overlay #lp.q .lpi.sel{z-index:3}
+  html.overlay #lp.q .lpi.sel,html.overlay #lpTrack .lpi.sel,#lp.big #lpTrack .lpi.sel{z-index:3}
+  html.overlay #lpTrack .lpi.sel > span,#lp.big #lpTrack .lpi.sel > span{display:block;position:absolute;left:50%;top:calc(100% - .2vh);transform:translateX(-50%);max-width:15vh;pointer-events:none}
+  html.overlay #lpTrack .lpi.sel::before,#lp.big #lpTrack .lpi.sel::before{bottom:-2.6vh}
+  #lpTrack .lpi::before{content:"";position:absolute;inset:0;border-radius:1.6vh;background:rgba(255,255,255,.15);box-shadow:inset 0 0 0 .5px rgba(255,255,255,.18);opacity:0;transition:opacity .14s ease-out;pointer-events:none}
+  #lpTrack .lpi.sel::before{opacity:1}
   html.overlay #lp.q .lpi.sel > span{display:block;position:absolute;left:50%;top:calc(100% - .2vh);transform:translateX(-50%);max-width:15vh;pointer-events:none}
   html.overlay #lp.q .lpi.sel::before{bottom:-2.6vh}
   /* searching over your apps: the bar and the answers take the panel's whole width, and a long answer (wiki) fills its height and scrolls */
@@ -144,6 +149,146 @@
   .ar.hero .at{font-family:'Shadow SF Display','Shadow SF',sans-serif;font-size:4vh;font-weight:600;letter-spacing:-.015em;font-variant-numeric:tabular-nums}
   .ar .ak{flex:none;font-size:1.35vh;opacity:0;padding:.5vh .9vh;border-radius:.7vh;background:rgba(255,255,255,.14);transition:opacity .15s,background-color .15s,color .15s}
   .ar.sel .ak{opacity:.85}
+  /* like Windows search: filters under the bar, and an app's own actions as small buttons in its row */
+  #lpFilt{display:none;flex:none;gap:1.1vh;margin-top:1.8vh;width:min(92vw,126vh);flex-wrap:wrap;justify-content:flex-start}
+  #lpFilt.on{display:flex}
+  #lpFilt .fc{font-size:2.25vh;font-weight:500;padding:1vh 2.2vh;border-radius:99px;cursor:pointer;color:rgba(255,255,255,.88);
+      background:rgba(255,255,255,.1);box-shadow:inset 0 0 0 .5px rgba(255,255,255,.18);transition:background-color .15s,color .15s}
+  #lpFilt .fc:hover{background:rgba(255,255,255,.18)}
+  #lpFilt .fc.cur{background:rgba(255,255,255,.92);color:#111;box-shadow:none}
+  .ar .achips{flex:none;display:flex;gap:.6vh}
+  .ar .ach{font-size:1.35vh;padding:.55vh 1.1vh;border-radius:99px;background:rgba(255,255,255,.13);box-shadow:inset 0 0 0 .5px rgba(255,255,255,.2);cursor:pointer;transition:background-color .15s,color .15s}
+  .ar .ach:hover{background:rgba(255,255,255,.24)}
+  .ar .ach.done{background:rgba(255,255,255,.92);color:#111}
+  /* ---------- ShadowUI search: typing turns Launchpad into the results. Everything found is a Launchpad tile, in a row per kind
+     (the strongest kind first); a strong answer is a card across the top; web searches and other answers are pills; what's selected,
+     and what you can do with it, sits in a caption along the bottom. No panes, no boxes: it's Launchpad. ---------- */
+  #lp.q #lpView,#lp.q #lpDots,#lp.q #lpEmpty,#lp.q #lpPwrZone{display:none}
+  #lpPrev{display:none}
+  #lp.q #lpAns.on{display:block;flex:1 1 auto;min-height:0;margin:1.2vh 0 0;width:min(92vw,126vh);overflow:hidden;
+      background:none !important;box-shadow:none !important;backdrop-filter:none !important;border-radius:0}
+  #lp.q #lpAns > .lgCanvas{display:none}
+  #lp.q #lpAnsRows{height:100%;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:none;padding:.4vh 0 3vh;box-sizing:border-box;
+      -webkit-mask-image:linear-gradient(#000 calc(100% - 3.5vh),transparent);mask-image:linear-gradient(#000 calc(100% - 3.5vh),transparent)}
+  #lp.q #lpAnsRows::-webkit-scrollbar{display:none}
+  /* a row of one kind: a quiet label, then Launchpad tiles */
+  .sxg{margin-top:1.8vh}
+  .sxg:first-child{margin-top:.2vh}
+  .sxg > h6{display:flex;align-items:baseline;gap:1.4vh;margin:0 0 .6vh 2vh;font:600 2vh 'Shadow SF',sans-serif;color:rgba(255,255,255,.76);letter-spacing:.01em;text-shadow:0 .1vh .4vh rgba(0,0,0,.35)}
+  .sxg > h6 b{font-weight:500;font-size:1.8vh;color:rgba(255,255,255,.6);cursor:pointer;padding:.3vh .8vh;margin:-.3vh 0;border-radius:.8vh;transition:color .15s,background-color .15s}
+  .sxg > h6 b:hover{background:rgba(255,255,255,.1)}
+  .sxg > h6 b::after{content:" ›"}
+  .sxg > h6 b:hover{color:#fff}
+  .sxr{display:grid;grid-template-columns:repeat(${COLS},1fr);padding:0 1vh;row-gap:.6vh}
+  #lpAnsRows .lpi.sx > span{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;line-height:1.25;max-width:16vh;text-align:center;font-size:1.85vh;font-weight:600}
+  /* every result is a big icon; the selected one eases down and says its name */
+  #lp #lpAnsRows .lpi.sx{height:17.4vh;justify-content:center;gap:0;padding:.6vh 0;box-sizing:border-box;align-self:start}
+  #lp #lpAnsRows .lpi.sx .ic{width:11.4vh;height:11.4vh;border-radius:2.6vh;transition:width .26s cubic-bezier(.2,.9,.25,1),height .26s cubic-bezier(.2,.9,.25,1),border-radius .26s,filter .2s}
+  #lp #lpAnsRows .lpi.sx.sel .ic{width:10.2vh;height:10.2vh;border-radius:2.35vh}
+  #lp #lpAnsRows .lpi.sx > span,#lp #lpAnsRows .lpi.sx.sel > span{display:-webkit-box;position:static;transform:none;visibility:visible;max-height:0;opacity:0;margin-top:0;
+      transition:max-height .26s cubic-bezier(.2,.9,.25,1),opacity .18s ease-out,margin-top .26s cubic-bezier(.2,.9,.25,1)}
+  #lp #lpAnsRows .lpi.sx.sel > span{max-height:5vh;opacity:1;margin-top:.8vh}
+  #lp #lpAnsRows .lpi.sx.sel::before{bottom:0}
+  #lp #lpAnsRows.rr .lpi.sx .ic,#lp #lpAnsRows.rr .lpi.sx > span{transition:none}
+  html.overlay #lpAnsRows .lpi.sxapp > span,html.overlay #lpAnsRows .lpi.sxapp.sel > span,#lp.big #lpAnsRows .lpi.sxapp > span,#lp.big #lpAnsRows .lpi.sxapp.sel > span{display:-webkit-box;position:static;transform:none;visibility:hidden}   /* room kept for the name, so nothing moves */
+  html.overlay #lpAnsRows .lpi.sxapp.sel > span,#lp.big #lpAnsRows .lpi.sxapp.sel > span{visibility:visible}
+  html.overlay #lpAnsRows .lpi.sxapp.sel::before,#lp.big #lpAnsRows .lpi.sxapp.sel::before{bottom:0}
+  html.overlay #lpAnsRows .lpi.sxapp,#lp.big #lpAnsRows .lpi.sxapp{align-self:start}
+  /* names: apps follow your Launchpad (no names over your apps, or with large icons - the selected one shows its name); everything else always says what it is */
+  html.overlay #lpAns .lpi.sx:not(.sxapp) > span,html.overlay #lpAns .lpi.sx:not(.sxapp).sel > span,#lp.big #lpAns .lpi.sx:not(.sxapp) > span,#lp.big #lpAns .lpi.sx:not(.sxapp).sel > span{display:-webkit-box;position:static;transform:none}
+  html.overlay #lpAns .lpi.sx:not(.sxapp).sel::before,#lp.big #lpAns .lpi.sx:not(.sxapp).sel::before{bottom:0}
+  html.overlay #lpAns .lpi.sx:not(.sxapp),#lp.big #lpAns .lpi.sx:not(.sxapp){align-self:start}
+  /* Launchpad over your apps: every result says its name while searching (the home grid keeps its own look) */
+  html.overlay #lp #lpAnsRows .lpi.sx .ic{width:10.4vh;height:10.4vh;border-radius:2.4vh}
+  html.overlay #lp #lpAnsRows .lpi.sx.sel .ic{width:9.8vh;height:9.8vh;border-radius:2.25vh}
+  html.overlay #lp #lpAnsRows .lpi.sx > span,html.overlay #lp #lpAnsRows .lpi.sx.sel > span{visibility:visible;max-height:5vh;opacity:.8;margin-top:.8vh}
+  html.overlay #lp #lpAnsRows .lpi.sx.sel > span{opacity:1}
+  /* pictures for what isn't an app: a white glyph on colour (like an app icon), a real thumbnail, a Store logo, album art */
+  #lp #lpAns .ic.sxgl{background:linear-gradient(155deg,var(--t1),var(--t2));border-radius:2.15vh;box-shadow:inset 0 .1vh 0 rgba(255,255,255,.28),0 .5vh 1.2vh rgba(0,0,0,.28)}
+  #lp #lpAns .ic.sxgl svg{width:48%;height:48%;fill:none;stroke:#fff;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+  #lp #lpAns .ic.sxim{background:none;box-shadow:none}
+  #lp #lpAns .ic.sxim img{width:100%;height:100%;object-fit:contain;filter:drop-shadow(0 .4vh .7vh rgba(0,0,0,.28))}
+  #lp #lpAns .ic.sxim.cover,#lp #lpAns .ic.sxim.plate{overflow:hidden;border-radius:2.15vh;background:rgba(255,255,255,.08);box-shadow:0 .5vh 1.2vh rgba(0,0,0,.28)}
+  #lp #lpAns .ic.sxim.cover img{object-fit:cover;filter:none}
+  #lp #lpAns .ic.sxim.plate img{filter:none}
+  #lp #lpAns .ic.sxim.round{border-radius:50%}
+  #lp #lpAns .ic.sxim.nf{background:linear-gradient(155deg,#a3abb7,#5f6774);border-radius:2.15vh}
+  #lp #lpAns .ic.sxsw{border-radius:2.15vh;box-shadow:inset 0 0 0 .12vh rgba(255,255,255,.35),0 .5vh 1.2vh rgba(0,0,0,.28)}
+  /* a strong answer (a sum, the weather, Wikipedia ...): a card across the top */
+  .sxh{margin:.2vh 1.6vh 1vh;padding:2.4vh 2.8vh;border-radius:2.6vh;background:rgba(255,255,255,.07);cursor:pointer;transition:background-color .15s}
+  .sxh.sel{background:rgba(255,255,255,.14);box-shadow:inset 0 0 0 .5px rgba(255,255,255,.18)}
+  .sxhh{display:flex;align-items:center;gap:2.6vh}
+  #lp .sxh .ic{width:8.4vh;height:8.4vh;flex:none}
+  .sxhx{min-width:0;flex:1}
+  .sxht{font:600 5.4vh/1.06 'Shadow SF Display','Shadow SF',sans-serif;letter-spacing:-.02em;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+  .sxht.long{font-size:3.4vh;line-height:1.18}
+  .sxht.free{font:500 2.3vh/1.45 'Shadow SF',sans-serif}
+  .sxht.mono{font:500 3.2vh Consolas,monospace}
+  .sxhs{margin-top:.8vh;font-size:2.1vh;line-height:1.4;color:rgba(255,255,255,.62)}
+  .sxh .aw{margin-top:2vh;max-height:36vh;overflow-y:auto;overscroll-behavior:contain;padding-right:1vh;cursor:grab;scrollbar-width:thin;
+      font:400 1.95vh/1.6 'Shadow SF',sans-serif;color:rgba(255,255,255,.9)}
+  .sxh .aw p{margin:0 0 1.1vh}
+  .sxh .aw h4{margin:1.8vh 0 .7vh;font:600 2.2vh 'Shadow SF',sans-serif;color:#fff}
+  .sxh .aw img{float:right;max-width:18vh;max-height:20vh;margin:0 0 1vh 2.2vh;border-radius:1.6vh;object-fit:cover}
+  .sxh.load .sxht{opacity:.55}
+  /* pills: web searches, and answers that are a line of text */
+  .sxp{display:flex;flex-wrap:wrap;gap:1vh;padding:0 1.6vh}
+  .sxpl{display:flex;align-items:center;gap:1.1vh;padding:1.3vh 2.2vh;min-height:5vh;box-sizing:border-box;border-radius:99px;background:rgba(255,255,255,.09);font-size:2.2vh;cursor:pointer;max-width:46vh;min-width:0;transition:background-color .15s}
+  .sxpl > svg{width:2vh;height:2vh;flex:none;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;opacity:.7}
+  .sxpl > span{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .sxpl > span b{font-weight:500}
+  .sxpl.ans{border-radius:1.8vh;padding:1vh 1.8vh 1vh 1.1vh}
+  .sxpl.ans > span small{display:block;font-size:1.7vh;color:rgba(255,255,255,.58);margin-top:.15vh;overflow:hidden;text-overflow:ellipsis}
+  .sxpl.sel{background:rgba(255,255,255,.15);box-shadow:inset 0 0 0 .5px rgba(255,255,255,.18)}
+  .lpNo{padding:4vh 1.6vh;text-align:center;font-size:1.95vh;color:rgba(255,255,255,.6)}
+  /* small pictures (pills, the caption) */
+  .ri{flex:none;width:4.4vh;height:4.4vh;border-radius:1.1vh;display:grid;place-items:center;position:relative;overflow:hidden}
+  .ri.tile{background:linear-gradient(155deg,var(--t1),var(--t2))}
+  .ri.tile svg{width:56%;height:56%;fill:none;stroke:#fff;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+  .ri.img{overflow:visible}
+  .ri.img img{width:100%;height:100%;object-fit:contain}
+  .ri.img.cover,.ri.img.plate{overflow:hidden;background:rgba(255,255,255,.08)}
+  .ri.img.cover img{object-fit:cover}
+  .ri.img.round{border-radius:50%}
+  .ri.img.nf{background:linear-gradient(155deg,#a3abb7,#5f6774)}
+  .ri.sw{box-shadow:inset 0 0 0 .1vh rgba(255,255,255,.35)}
+  /* the caption: what's selected, and what you can do with it */
+  #lpCap{display:none;flex:none;width:min(92vw,126vh);margin:.4vh 0 4.4vh;padding:1.5vh 1.8vh 0;box-sizing:border-box;align-items:center;gap:1.7vh;box-shadow:inset 0 .07vh 0 rgba(255,255,255,.1)}
+  #lp.q #lpCap.on{display:flex}
+  #lpCap .ri{width:5.6vh;height:5.6vh;border-radius:1.4vh}
+  .sxct{flex:1;min-width:0}
+  .sxct b{display:block;font:600 2.5vh 'Shadow SF',sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .sxct span{display:block;margin-top:.4vh;font-size:1.9vh;color:rgba(255,255,255,.7);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .sxa{display:flex;gap:.9vh;flex:none}
+  .sxab{display:flex;align-items:center;gap:.9vh;padding:1.25vh 2vh;min-height:4.8vh;box-sizing:border-box;border-radius:99px;background:rgba(255,255,255,.11);font-size:2.05vh;font-weight:500;cursor:pointer;white-space:nowrap;transition:background-color .15s,transform .12s}
+  .sxab svg{width:2vh;height:2vh;flex:none;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+  .sxab kbd{font:500 1.55vh 'Shadow SF',sans-serif;opacity:.6;margin-left:.3vh}
+  .sxab:hover{background:rgba(255,255,255,.17)}
+  .sxab:active{transform:scale(.96)}
+  .sxab.primary{background:#f2f2f4;color:#111;font-weight:600}
+  .sxab.done{background:rgba(110,220,150,.34);color:#fff}
+  #lpCap > .sxct{animation:lpCapIn .16s cubic-bezier(.2,.9,.25,1) both}
+  #lpCap.still > *{animation:none}
+  @keyframes lpCapIn{from{opacity:.2;transform:translateY(.3vh)}}
+  /* new results arrive with a quick ripple; later refreshes don't replay it */
+  #lpAnsRows .lpi::before{content:"";position:absolute;inset:0;border-radius:1.6vh;background:rgba(255,255,255,.15);box-shadow:inset 0 0 0 .5px rgba(255,255,255,.18);opacity:0;transition:opacity .14s ease-out}
+  #lpAnsRows .lpi.sel::before{opacity:1}
+  #lpAnsRows.rr .lpi::before{transition:none}
+  #lpAnsRows .ic img{opacity:0;transition:opacity .22s ease-out}
+  #lpAnsRows .ic img.ld{opacity:1}
+  #lpAnsRows.capf .lpi.sel::before{opacity:.45}
+  #lpAnsRows.capf .sxpl.sel,#lpAnsRows.capf .sxh.sel{background:rgba(255,255,255,.09)}
+  .sxab.kf{background:rgba(255,255,255,.24);box-shadow:0 0 0 .22vh rgba(255,255,255,.9)}
+  .sxab.primary.kf{background:#fff;box-shadow:0 0 0 .22vh rgba(255,255,255,.9),0 0 0 .5vh rgba(255,255,255,.25)}
+  #lpAnsRows .nw{animation:lpTileIn .28s cubic-bezier(.2,.9,.25,1) both;animation-delay:calc(var(--i,0) * 12ms)}
+  @keyframes lpTileIn{from{opacity:0;transform:translateY(.8vh) scale(.95)}}
+  #lpAnsRows .lpi.done .ic,#lpAnsRows .sxpl.done,#lpAnsRows .sxh.done{transition:filter .15s;filter:brightness(1.35)}
+  /* filters: a quiet row of words; the one you're in has Launchpad's highlight */
+  #lpFilt .fc{background:none;box-shadow:none;color:rgba(255,255,255,.62);border-radius:1.6vh;transition:color .15s,background-color .15s}
+  #lpFilt .fc:hover{background:none;color:#fff}
+  #lpFilt .fc.cur{color:#fff;background:rgba(255,255,255,.15);box-shadow:inset 0 0 0 .5px rgba(255,255,255,.18)}
+  #lpFilt .fc{color:rgba(255,255,255,.72)}
+  @media (prefers-reduced-motion: reduce){#lpAnsRows .nw,#lpCap > .sxct{animation:none}#lpAnsRows .lpi::before{transition:none}}
   .ar.done .ak{opacity:1;background:rgba(255,255,255,.92);color:#111}
   .ar.load .at{opacity:.6}
 
@@ -210,6 +355,9 @@
   html:not(.overlay) #lp.big .ic{width:10.4vh;height:10.4vh;border-radius:2.38vh}   /* on the wallpaper: a bit smaller, more space around each */
   #lp.big .lpi > span{display:none}
   #lp.big .lpi{align-self:center}
+  #lp.big.q .lpi.sel{z-index:3}                                     /* ...except the highlighted one while searching */
+  #lp.big.q .lpi.sel > span{display:block;position:absolute;left:50%;top:calc(100% - .2vh);transform:translateX(-50%);max-width:15vh;pointer-events:none}
+  #lp.big.q .lpi.sel::before{bottom:-2.6vh}
   #lp.sizing .ic{transition:width .4s ${EASE},height .4s ${EASE},border-radius .4s ${EASE},transform .2s ${EASE},filter .2s}
   /* over your apps the corners are the panel's, not the screen's */
   html.overlay #lpSizeBar{top:calc(var(--pt,8vh) + 1.6vh);left:calc(var(--pl,4.5vw) + 1.8vh)}
@@ -283,7 +431,9 @@
   const lp = $('lp'), bg = $('lpBg'), bgx = bg.getContext('2d'), search = $('lpSearch'), track = $('lpTrack'), dots = $('lpDots'), empty = $('lpEmpty'), ansEl = $('lpAns');
   { const wb = document.getElementById('lpWinZone'); if (wb) lp.appendChild(wb); }   // the Windows button lives in Launchpad's bottom corner
   const sb = $('lpSB'); let glass = null, gAns = null, gMenu = null, gDone = null, gSize = null, gRestore = null, gDlg = null; const glasses = [];
-  ansEl.innerHTML = '<div id="lpAnsRows"></div>'; const ansRows = $('lpAnsRows');
+  ansEl.innerHTML = '<div id="lpAnsRows" role="listbox" aria-label="Search results"></div>'; const ansRows = $('lpAnsRows');   // searching: results on the left, the selected one large on the right   // searching: Launchpad becomes the results (ShadowUI)
+  const filtEl = document.createElement('div'); filtEl.id = 'lpFilt'; ansEl.before(filtEl);
+  const capEl = document.createElement('div'); capEl.id = 'lpCap'; capEl.setAttribute('aria-live', 'polite'); ansEl.after(capEl);           // searching: what's selected, and what you can do with it
   sb.insertAdjacentHTML('beforeend', '<i id="lpSelHi"></i><i id="lpCaret"></i><span id="lpMeas"></span>');
   (() => { const sc = document.createElement('script'); sc.src = 'glassbar.js' + (location.protocol.startsWith('http') ? '?v=' + Date.now() : '');
     sc.onload = () => {
@@ -485,7 +635,7 @@
 
   function build(q, limit) {
     const key = q + '|' + limit + '|' + apps.length + '|' + layoutVer; if (builtFor === key) return; builtFor = key;
-    const list = q ? matchApps(q).slice(0, limit || 999).map(a => ({ t: 'a', a })) : entries(); shown = list;
+    const list = limit === -1 ? [] : q ? matchApps(q).slice(0, limit || 999).map(a => ({ t: 'a', a })) : entries(); shown = list;
     render(list);
     empty.style.display = list.length || ansList.length ? 'none' : 'grid';
   }
@@ -743,6 +893,32 @@
     track.classList.add('moving'); track.style.transform = tf;
     settleT = setTimeout(() => track.classList.remove('moving'), 520);
   }
+  let homeSel = -1;                                                    // the app highlighted on the home grid (-1: none)
+  const homeTiles = () => [...track.querySelectorAll('.lpPage.cur .lpi')];
+  function setHome(i) {
+    track.querySelectorAll('.lpi.sel').forEach(t => t.classList.remove('sel'));
+    const ts = homeTiles(); if (i < 0 || !ts.length) { homeSel = -1; return; }
+    homeSel = Math.max(0, Math.min(ts.length - 1, i)); ts[homeSel].classList.add('sel');
+  }
+  function homeKey(key) {                                               // arrows over the grid; returns true if it used the key
+    if (search.value || wiggle || folderOpenId || dlg) return false;
+    const ts = homeTiles(); if (!ts.length) return false;
+    if (homeSel < 0) { setHome(0); return true; }                       // first press: highlight the first app
+    const col = homeSel % COLS, row = Math.floor(homeSel / COLS);
+    if (key === 'ArrowRight') {
+      if (col < COLS - 1 && homeSel + 1 < ts.length) setHome(homeSel + 1);
+      else if (page < pages - 1) { goPage(page + 1); setHome(row * COLS); }
+      else goPage(page + 1);                                            // the last page: a little rubber-band
+    } else if (key === 'ArrowLeft') {
+      if (col > 0) setHome(homeSel - 1);
+      else if (page > 0) { goPage(page - 1); setHome(Math.min(homeTiles().length - 1, row * COLS + COLS - 1)); }
+      else goPage(page - 1);
+    } else if (key === 'ArrowDown') { if (homeSel + COLS < ts.length) setHome(homeSel + COLS); else if (row < Math.ceil(ts.length / COLS) - 1) setHome(ts.length - 1); }
+    else if (key === 'ArrowUp') { if (homeSel - COLS >= 0) setHome(homeSel - COLS); }
+    return true;
+  }
+  track.addEventListener('mouseover', e => { if (search.value || wiggle || drag) return; const it = e.target.closest('.lpi'); if (!it) return; const i = homeTiles().indexOf(it); if (i >= 0 && i !== homeSel) setHome(i); });
+  track.addEventListener('mouseleave', () => { if (!search.value) setHome(-1); });
   function goPage(p, instant) {
     if (!instant && (p < 0 || p > pages - 1)) {                       // rubber-band at the ends, like macOS
       const edge = p < 0 ? 1 : -1, nudge = Math.round(innerHeight * .05); clearTimeout(bounceT);
@@ -750,7 +926,7 @@
       bounceT = setTimeout(() => slide(pageX(page)), 140);
       return;
     }
-    page = Math.max(0, Math.min(pages - 1, p));
+    page = Math.max(0, Math.min(pages - 1, p)); homeSel = -1; track.querySelectorAll('.lpi.sel').forEach(t => t.classList.remove('sel'));
     slide(pageX(page), instant);
     [...track.children].forEach((pg, k) => pg.classList.toggle('cur', k === page));
     [...dots.children].forEach((d, k) => d.classList.toggle('on', k === page));
@@ -1040,6 +1216,13 @@
   const IN_LIVELY = !!(window.chrome && window.chrome.webview) || /Lively/i.test(navigator.userAgent) || new URLSearchParams(location.search).has('helper');
   function fastState(o) { if (!IN_LIVELY || window.OVERLAY) return; fetch(`${evBase}/lpstate?${q2s({ open: o })}`, { cache: 'no-store', mode: 'no-cors' }).catch(() => call('lpstate', { open: o })); }
   const evBase = base.replace(/:(\d+)$/, (m, p) => ':' + (+p + 1));      // the helper's instant key / swipe channel
+  // apps and web searches open from that channel at once (it never waits behind slower look-ups); the old way if it can't
+  window.__lpFast = (path, o) => {
+    const slow = () => fetch(`${base}/${path}?${q2s(o)}`, { cache: 'no-store', mode: 'no-cors' }).catch(() => {});
+    return fetch(`${evBase}/${path === 'launch' ? 'go' : 'goweb'}?${q2s(o)}`, { cache: 'no-store' })
+      .then(r => { if (!r.ok) return slow(); if (path === 'launch') fetch(`${base}/launch?${q2s({ ...o, count: 1 })}`, { cache: 'no-store', mode: 'no-cors' }).catch(() => {}); })
+      .catch(slow);
+  };
   (async function waitForHelper() {                                 // long-poll: answered the moment a key, swipe or F4 happens
     if (!IN_LIVELY || window.OVERLAY) return;                        // the overlay gets its keys directly (it's a normal focused window)
     let since = -1;
@@ -1712,14 +1895,17 @@
   const FOLD = [['downloads', 'Downloads', 'downloads,download'], ['documents', 'Documents', 'documents,my documents'], ['desktop', 'Desktop', 'desktop'], ['pictures', 'Pictures', 'pictures'],
     ['music', 'Music folder', 'music folder'], ['videos', 'Videos', 'videos'], ['recycle', 'Recycle Bin', 'recycle bin,trash,bin'], ['screenshots', 'Screenshots', 'screenshots'],
     ['thispc', 'This PC', 'this pc,my computer,drives'], ['home', 'Home folder', 'home folder,user folder'], ['onedrive', 'OneDrive folder', 'onedrive folder']];
-  const KEYS = [['playpause', 'Play / pause', 'play,pause,resume,play music,pause music,play pause', 'play'], ['next', 'Next track', 'next,next song,next track,skip', 'next'],
+  const KEYS = [['playpause', 'Play / pause', 'play,pause,play music,pause music,play pause', 'play'], ['next', 'Next track', 'next,next song,next track,skip', 'next'],
     ['prev', 'Previous track', 'previous,prev,previous song,previous track', 'prev'], ['mute', 'Mute / unmute', 'mute,unmute', 'mute'],
     ['volup', 'Volume up', 'volume up,louder,vol up', 'vol'], ['voldown', 'Volume down', 'volume down,quieter,vol down,softer', 'vol']];
   const phraseHit = (q, words, min = 3) => { const ph = words.split(','); if (ph.includes(q)) return 2; if (q.length >= 5 && min < 99 && ph.some(p => p.length >= 5 && dl(q, p) <= 1)) return 2; return q.length >= min && ph.some(p => p.startsWith(q)) ? 1 : 0; };
+  const SETU = { wifi: 'network-wifi', network: 'network', bluetooth: 'bluetooth', display: 'display', sound: 'sound', battery: 'batterysaver', power: 'powersleep',
+    update: 'windowsupdate', apps: 'appsfeatures', notifications: 'notifications', focus: 'quiethours', personalization: 'personalization', background: 'personalization-background',
+    touchpad: 'devices-touchpad', mouse: 'mousetouchpad', keyboard: 'keyboard', storage: 'storagesense', privacy: 'privacy', accounts: 'yourinfo', time: 'dateandtime',
+    language: 'regionlanguage', printers: 'printers', vpn: 'network-vpn', hotspot: 'network-mobilehotspot', nightlight: 'nightlight', about: 'about', colors: 'colors',
+    'themes,theme': 'themes', taskbar: 'taskbar', defaultapps: 'defaultapps', startup: 'startupapps', gaming: 'gaming-gamebar', accessibility: 'easeofaccess' };
   function system(q) {
     const out = [], qq = q.replace(/^(open|go to|show)\s+/, '').replace(/\s+settings?$/, '').replace(/^settings?\s+/, '');
-    const isSet = /settings?/.test(q);
-    SET.forEach(([k, name, w]) => { const h = phraseHit(qq, w); if (h) out.push({ ic: 'gear', t: `${name} settings`, s: 'Windows Settings', key: 'Open', pr: h === 2 && (isSet || !appHit) ? 2.5 : 1.2, run: () => { call('settings', { p: k }); hide(); } }); });
     FOLD.forEach(([k, name, w]) => { const h = phraseHit(qq, w); if (h) out.push({ ic: 'folder', t: name, s: 'Open in File Explorer', key: 'Open', pr: h === 2 && !appHit ? 2.5 : 1.2, run: () => { call('folder', { f: k }); hide(); } }); });
     KEYS.forEach(([k, name, w, ic]) => { if (phraseHit(q, w, 99) === 2) out.push({ ic, t: name, s: 'Media keys', key: 'Press', pr: 2.6, run: () => call('key', { k }), stay: true }); });
     if (/^(lock|lock (pc|screen|computer|laptop)|lock it)$/.test(q)) out.push({ ic: 'lock', t: 'Lock this PC', s: 'Windows + L', key: 'Lock', pr: 3, run: () => { hide(); setTimeout(() => call('lock'), 250); } });
@@ -1774,7 +1960,7 @@
     setTimeout(() => {
       if (!wanted.has(key)) { net.delete(key); return; }
       fn().then(d => { e.state = d ? 'ok' : 'none'; e.data = d; e.at = Date.now(); }).catch(() => { e.state = 'none'; }).finally(() => { if (open && search.value) onQuery(); });
-    }, 320);
+    }, /^(files:|av:|recent)/.test(key) ? 60 : 220);
     return e;
   }
   const getJ = async u => { const r = await fetch(u, { cache: 'no-store' }); if (!r.ok) return null; return r.json(); };
@@ -1894,9 +2080,363 @@
     return out;
   }
 
+  /* ======================================= search, Windows-style =======================================
+     While you type, the app grid steps aside for a two-pane panel: results sorted into groups on the left (Best match first,
+     then Apps, Settings, Documents, Folders, Photos, Music, Videos, YouTube Music, Answers, the web, the Microsoft Store) and a
+     large preview of the selected one on the right, with its own actions. Up / Down / Tab or resting the pointer on a result
+     selects it; Enter or a click opens it. Files, thumbnails, Store apps, web suggestions and app actions come from the helper
+     (Windows' own search index and icons). "docs: report", "settings: mouse", "store: spotify" ... narrow it to one kind. */
+  Object.assign(ICON, {
+    file: '<path d="M6.5 3.5h7l4 4v13h-11z"/><path d="M13.5 3.5v4h4"/>',
+    doc: '<path d="M6.5 3.5h7l4 4v13h-11z"/><path d="M13.5 3.5v4h4M9.5 12.5h5M9.5 16h5"/>',
+    img: '<rect x="4" y="5" width="16" height="14" rx="2.5"/><circle cx="9" cy="10" r="1.6"/><path d="m4.5 17 5-4.5 3.5 3 2.5-2 4 3.5"/>',
+    film: '<rect x="4" y="5.5" width="16" height="13" rx="2.5"/><path d="M10 9.5v5l4.2-2.5z"/>',
+    note: '<path d="M9 17.5V6l10-2v11.5"/><circle cx="7" cy="17.5" r="2"/><circle cx="17" cy="15.5" r="2"/>',
+    recent: '<path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3M4.5 4.5v3.2h3.2"/><path d="M12 8v4l2.8 1.8"/>',
+    store: '<path d="M4.5 8.5h15l-1.2 11h-12.6z"/><path d="M9 8.5V7a3 3 0 0 1 6 0v1.5"/>',
+    wifi: '<path d="M3.8 9.6a12 12 0 0 1 16.4 0M6.9 12.9a7.4 7.4 0 0 1 10.2 0M10 16.1a2.9 2.9 0 0 1 4 0"/><circle cx="12" cy="18.9" r=".9" fill="#fff"/>',
+    bt: '<path d="M7.2 7.6 16.4 16.4 12 20.5V3.5l4.4 4.1-9.2 8.8"/>',
+    display: '<rect x="3.5" y="4.5" width="17" height="11.5" rx="2.2"/><path d="M9 20h6M12 16v4"/>',
+    bell: '<path d="M6.5 16.5V11a5.5 5.5 0 0 1 11 0v5.5l1.5 1.5h-14zM10 20.3a2 2 0 0 0 4 0"/>',
+    mouse: '<rect x="7" y="3.5" width="10" height="17" rx="5"/><path d="M12 7v3.5"/>',
+    drive: '<rect x="3.5" y="7" width="17" height="10" rx="2.2"/><path d="M10 13.9h6.5"/><circle cx="7" cy="13.9" r=".8" fill="#fff"/>',
+    person: '<circle cx="12" cy="8.5" r="3.6"/><path d="M5 20a7 7 0 0 1 14 0"/>',
+    shield: '<path d="M12 3.5 5 6.2v5.3c0 4.3 2.9 7.5 7 9 4.1-1.5 7-4.7 7-9V6.2z"/>',
+    update: '<path d="M19.5 12a7.5 7.5 0 0 1-13 5.1M4.5 12a7.5 7.5 0 0 1 13-5.1M17.5 3.5v3.4h-3.4M6.5 20.5v-3.4h3.4"/>',
+    palette: '<path d="M12 3.5a8.5 8.5 0 0 0 0 17c1.4 0 1.8-1 1.3-2-.6-1.2.2-2.5 1.6-2.5H17a3.5 3.5 0 0 0 3.5-3.5c0-5-3.8-9-8.5-9z"/><circle cx="7.8" cy="11.2" r="1.1"/><circle cx="10.6" cy="7.4" r="1.1"/><circle cx="15.1" cy="8" r="1.1"/>',
+    appsgrid: '<rect x="4" y="4" width="6.5" height="6.5" rx="1.7"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.7"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.7"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.7"/>',
+    pad: '<path d="M7.5 8h9a4.5 4.5 0 0 1 4.3 5.8l-1 3.3a2.3 2.3 0 0 1-4 .7L14.5 16h-5l-1.3 1.8a2.3 2.3 0 0 1-4-.7l-1-3.3A4.5 4.5 0 0 1 7.5 8z"/><path d="M8 10.8v3.2M6.4 12.4h3.2"/><circle cx="16" cy="11.2" r=".8" fill="#fff"/><circle cx="17.6" cy="13.2" r=".8" fill="#fff"/>',
+    access: '<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="7.6" r="1.2" fill="#fff"/><path d="M7.5 10.2 12 11l4.5-.8M12 11v3l-2 3.6M12 14l2 3.6"/>',
+    keyboard: '<rect x="3" y="6.5" width="18" height="11" rx="2.2"/><path d="M8 14.2h8"/><circle cx="6.8" cy="10.2" r=".75" fill="#fff"/><circle cx="10.3" cy="10.2" r=".75" fill="#fff"/><circle cx="13.8" cy="10.2" r=".75" fill="#fff"/><circle cx="17.3" cy="10.2" r=".75" fill="#fff"/>',
+    printer: '<path d="M7 9V4h10v5M7 17H5a1.5 1.5 0 0 1-1.5-1.5v-5A1.5 1.5 0 0 1 5 9h14a1.5 1.5 0 0 1 1.5 1.5v5A1.5 1.5 0 0 1 19 17h-2M7 14h10v6H7z"/>',
+    power: '<path d="M12 3.5v8M7.2 6.5a7.5 7.5 0 1 0 9.6 0"/>',
+    laptop: '<rect x="5" y="5" width="14" height="10" rx="1.6"/><path d="M3 18.5h18"/>',
+    info: '<circle cx="12" cy="12" r="8.5"/><path d="M12 11v5.5"/><circle cx="12" cy="7.9" r=".9" fill="#fff"/>',
+    moon: '<path d="M19.5 14.5A8 8 0 0 1 9.5 4.5a8 8 0 1 0 10 10z"/>',
+    open: '<path d="M14 4.5h5.5V10M19.5 4.5 11 13M18 14v4.5a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 4 18.5v-11A1.5 1.5 0 0 1 5.5 6H10"/>',
+    copy: '<rect x="8.5" y="8.5" width="11" height="11" rx="2.2"/><path d="M15.5 8.5V6a1.5 1.5 0 0 0-1.5-1.5H6A1.5 1.5 0 0 0 4.5 6v8A1.5 1.5 0 0 0 6 15.5h2.5"/>',
+    admin: '<path d="M12 3.5 5 6.2v5.3c0 4.3 2.9 7.5 7 9 4.1-1.5 7-4.7 7-9V6.2z"/><path d="m9.2 12 2 2 3.8-3.8"/>',
+    pinS: '<path d="M9.5 4h5l-.8 5.2 3.3 3.3H7l3.3-3.3zM12 12.5V20"/>',
+    star: '<path d="m12 4 2.4 5 5.4.6-4 3.7 1.1 5.3L12 16l-4.9 2.6 1.1-5.3-4-3.7 5.4-.6z"/>',
+    mic: '<rect x="9" y="3.5" width="6" height="11" rx="3"/><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v2.5"/>',
+    camera: '<path d="M4 8.5A1.5 1.5 0 0 1 5.5 7h2l1.5-2h6l1.5 2h2A1.5 1.5 0 0 1 20 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 17.5z"/><circle cx="12" cy="13" r="3.3"/>',
+    phone: '<rect x="7" y="3" width="10" height="18" rx="2.4"/><path d="M11 17.6h2"/>',
+    reveal: '<path d="M3.5 7.5a2 2 0 0 1 2-2h4l2 2h7a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/><path d="M10 13h5m-2-2 2 2-2 2"/>',
+  });
+  const HAS_HELPER = !!(window.LAUNCH && IN_LIVELY);
+  const FILTERS = [['all', 'All'], ['apps', 'Apps'], ['docs', 'Documents'], ['folders', 'Folders'], ['photos', 'Photos'], ['music', 'Music'], ['videos', 'Videos'], ['settings', 'Settings'], ['web', 'Web'], ['store', 'Store']];
+  const FPREFIX = { apps: 'apps', app: 'apps', docs: 'docs', doc: 'docs', documents: 'docs', files: 'files', file: 'files', folders: 'folders', folder: 'folders',
+    photos: 'photos', photo: 'photos', pictures: 'photos', images: 'photos', music: 'music', songs: 'music', videos: 'videos', video: 'videos',
+    settings: 'settings', setting: 'settings', web: 'web', store: 'store' };
+  function splitFilter(raw) {                                           // "docs: report" -> { f: 'docs', q: 'report' }
+    const m = raw.match(/^\s*([a-z]+):\s*(.*)$/i); const f = m && FPREFIX[m[1].toLowerCase()];
+    return f ? { f, q: m[2] } : { f: 'all', q: raw };
+  }
+  const fileIcon = f => f.dir ? 'folder' : /^\.(jpe?g|png|gif|webp|heic|heif|bmp|tiff?|svg|raw|cr2|nef|arw|dng)$/.test(f.x) ? 'img'
+    : /^\.(mp4|mkv|mov|avi|wmv|webm|m4v|mts)$/.test(f.x) ? 'film' : /^\.(mp3|wav|flac|m4a|aac|ogg|wma|aiff?|opus)$/.test(f.x) ? 'note'
+    : /^\.(docx?|pdf|txt|rtf|odt|xlsx?|pptx?|csv|md|pages|key|numbers|epub)$/.test(f.x) ? 'doc' : 'file';
+  function when(iso, full) {                                            // "Today 10:42", "Yesterday", "12 Mar", "12 Mar 2023"
+    const d = new Date(iso); if (!iso || isNaN(d)) return '';
+    if (full) return d.toLocaleString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+    const now = new Date(), day = 864e5;
+    const d0 = new Date(d.getFullYear(), d.getMonth(), d.getDate()), n0 = new Date(now.getFullYear(), now.getMonth(), now.getDate()), diff = Math.round((n0 - d0) / day);
+    if (diff === 0) return 'Today ' + d.toLocaleTimeString(LOC, { hour: 'numeric', minute: '2-digit' });
+    if (diff === 1) return 'Yesterday';
+    return d.toLocaleDateString('en-GB', d.getFullYear() === now.getFullYear() ? { day: 'numeric', month: 'short' } : { day: 'numeric', month: 'short', year: 'numeric' });
+  }
+  function where_(p, od) {                                              // "OneDrive › Documents › Work", "Downloads", "Desktop › Projects"
+    const parts = p.split('\\'); parts.pop();
+    const u = parts.findIndex((x, i) => i > 0 && parts[i - 1].toLowerCase() === 'users');
+    let rest = u >= 0 ? parts.slice(u + 1) : parts;                    // drop C:\Users\<you>
+    if (od) { const k = rest.findIndex(x => /^OneDrive/i.test(x)); if (k >= 0) rest = ['OneDrive', ...rest.slice(k + 1)]; }
+    if (rest.length > 3) rest = [rest[0], '…', ...rest.slice(-2)];
+    return rest.join(' › ') || (u >= 0 ? 'Home folder' : p.slice(0, 3));
+  }
+  const fmtSize = n => !n ? '' : n < 1024 ? `${n} bytes` : n < 1048576 ? `${(n / 1024).toFixed(n < 10240 ? 1 : 0)} KB` : n < 1073741824 ? `${(n / 1048576).toFixed(1)} MB` : `${(n / 1073741824).toFixed(2)} GB`;
+  const helperJ = (path, o) => getJ(`${evBase}/${path}?${q2s(o)}`);
+  const thumbUrl = (p, s, icon) => `${evBase}/thumb?${q2s({ p, s, i: icon ? 1 : 0 })}`;
+  function copyText(t) { try { navigator.clipboard?.writeText(t).catch(() => {}); } catch (_) {} call('clip', { text: t }); }
+
+  /* ---- icons: real ones where Windows has them (apps, files, Store logos), otherwise a coloured tile with a white glyph ---- */
+  const TONE = { blue: ['#5aa8ff', '#2370ea'], sky: ['#4fd0ff', '#0d93e3'], teal: ['#46dccb', '#10a597'], green: ['#5be38b', '#1fae55'], lime: ['#9be15d', '#3fa34d'],
+    orange: ['#ffb54d', '#ff7b0f'], yellow: ['#ffd84d', '#f2a100'], pink: ['#ff79b0', '#e2397c'], red: ['#ff7a6e', '#e33b32'], purple: ['#bd93ff', '#7c4dff'],
+    indigo: ['#8a90ff', '#4f52e6'], slate: ['#8492a8', '#47536a'], gray: ['#a3abb7', '#5f6774'], graphite: ['#6f6f78', '#34343b'], google: ['#6aa6ff', '#2f6fe6'] };
+  const ICOL = { calc: 'orange', money: 'green', unit: 'indigo', clock: 'graphite', globe: 'sky', cal: 'red', timer: 'orange', gear: 'gray', folder: 'yellow', play: 'pink',
+    next: 'pink', prev: 'pink', vol: 'pink', mute: 'pink', lock: 'graphite', dice: 'pink', key: 'yellow', search: 'google', book: 'purple', wiki: 'graphite', sun: 'yellow',
+    cloud: 'sky', rain: 'sky', snow: 'sky', bolt: 'green', battery: 'green', hash: 'slate', web: 'blue', yt: 'red', pin: 'red', text: 'gray', recent: 'blue', store: 'blue',
+    file: 'gray', doc: 'blue', img: 'teal', film: 'purple', note: 'pink' };
+  const glyph = (ic, tone) => ({ kind: 'tile', ic, tone: tone || ICOL[ic] || 'gray' });
+  function iconHtml(ic, cls = '') {
+    if (!ic) return `<div class="ri ${cls}"></div>`;
+    if (ic.kind === 'img') return `<div class="ri img${ic.cover ? ' cover' : ''}${ic.round ? ' round' : ''}${ic.plate ? ' plate' : ''} ${cls}"><img src="${esc(ic.src)}" alt="" decoding="async" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden';this.parentNode.classList.add('nf')"></div>`;
+    if (ic.kind === 'sw') return `<div class="ri sw ${cls}" style="background:${esc(ic.color)}"></div>`;
+    const [a, b] = TONE[ic.tone] || TONE.gray;
+    return `<div class="ri tile ${cls}" style="--t1:${a};--t2:${b}">${svg(ic.ic)}</div>`;
+  }
+
+  /* ---- every Settings page, and the deeper things people look for ("lid", "dns", "hidden files"), each with its own icon ---- */
+  const ALLSET = [['display', 'Display', 'screen brightness resolution scale monitor hdr refresh rate'], ['nightlight', 'Night light', 'blue light warm'],
+    ['display-advancedgraphics', 'Graphics', 'gpu graphics performance preference'], ['sound', 'Sound', 'audio output input speakers microphone'], ['apps-volume', 'Volume mixer', 'app volume'],
+    ['sound-devices', 'Sound devices', 'audio devices'], ['notifications', 'Notifications', 'alerts banners'], ['quiethours', 'Focus', 'do not disturb dnd'],
+    ['powersleep', 'Power & battery', 'power mode sleep screen timeout'], ['batterysaver', 'Energy saver', 'battery saver'], ['storagesense', 'Storage', 'disk space cleanup'],
+    ['storagepolicies', 'Storage Sense', 'cleanup temporary files'], ['multitasking', 'Multitasking', 'snap windows alt tab desktops'], ['activation', 'Activation', 'product key license'],
+    ['troubleshoot', 'Troubleshoot', 'fix problems'], ['recovery', 'Recovery', 'reset this pc advanced startup'], ['project', 'Projecting to this PC', 'miracast wireless display'],
+    ['clipboard', 'Clipboard', 'clipboard history'], ['remotedesktop', 'Remote Desktop', 'rdp'], ['about', 'About', 'device specs ram processor rename pc name'],
+    ['optionalfeatures', 'Optional features', 'features add'], ['crossdevice', 'Nearby sharing', 'nearby share'], ['deviceencryption', 'Device encryption', 'bitlocker'],
+    ['bluetooth', 'Bluetooth & devices', 'bluetooth pair airpods headphones'], ['connecteddevices', 'Devices', 'add device'], ['printers', 'Printers & scanners', 'printer scanner'],
+    ['mobile-devices', 'Mobile devices', 'phone link android iphone'], ['pen', 'Pen & Windows Ink', 'stylus'], ['autoplay', 'AutoPlay', 'autoplay'], ['usb', 'USB', 'usb'],
+    ['devices-touchpad', 'Touchpad', 'trackpad gestures scroll'], ['mousetouchpad', 'Mouse', 'pointer speed scroll'], ['camera', 'Cameras', 'webcam'],
+    ['network-status', 'Network & internet', 'network internet'], ['network-wifi', 'Wi-Fi', 'wifi wireless'], ['network-wifisettings', 'Manage known networks', 'saved wifi forget'],
+    ['network-ethernet', 'Ethernet', 'cable lan'], ['network-vpn', 'VPN', 'vpn'], ['network-mobilehotspot', 'Mobile hotspot', 'hotspot tethering'], ['network-airplanemode', 'Airplane mode', 'flight mode'],
+    ['network-proxy', 'Proxy', 'proxy'], ['network-advancedsettings', 'Advanced network settings', 'adapters dns reset'], ['datausage', 'Data usage', 'data limit'],
+    ['personalization', 'Personalisation', 'personalization personalisation customise customize'],
+    ['personalization-background', 'Background', 'wallpaper'], ['colors', 'Colours', 'dark mode light mode accent colour color'], ['themes', 'Themes', 'theme'],
+    ['lockscreen', 'Lock screen', 'lock screen'], ['personalization-textinput', 'Text input', 'touch keyboard emoji'], ['personalization-start', 'Start', 'start menu'],
+    ['taskbar', 'Taskbar', 'taskbar'], ['fonts', 'Fonts', 'fonts'], ['personalization-lighting', 'Dynamic Lighting', 'rgb lighting'],
+    ['appsfeatures', 'Installed apps', 'uninstall programs apps'], ['advanced-apps', 'Advanced app settings', 'app sources'], ['defaultapps', 'Default apps', 'default browser open with'],
+    ['maps', 'Offline maps', 'maps'], ['appsforwebsites', 'Apps for websites', 'links'], ['videoplayback', 'Video playback', 'hdr video'], ['startupapps', 'Startup', 'startup apps launch at sign in'],
+    ['yourinfo', 'Your info', 'account profile picture'], ['emailandaccounts', 'Email & accounts', 'email accounts'], ['signinoptions', 'Sign-in options', 'pin password windows hello fingerprint face'],
+    ['workplace', 'Access work or school', 'work school'], ['otherusers', 'Other users', 'add user'], ['family-group', 'Family', 'family'], ['backup', 'Windows Backup', 'backup sync onedrive'],
+    ['dateandtime', 'Date & time', 'clock time zone'], ['regionlanguage', 'Language & region', 'language region country'], ['typing', 'Typing', 'autocorrect spell'],
+    ['speech', 'Speech', 'voice'], ['keyboard', 'Advanced keyboard settings', 'input method keyboard layout'],
+    ['gaming-gamebar', 'Game Bar', 'xbox game bar'], ['gaming-gamedvr', 'Captures', 'screen recording clips'], ['gaming-gamemode', 'Game Mode', 'game mode'],
+    ['easeofaccess', 'Accessibility', 'accessibility'], ['easeofaccess-display', 'Text size', 'bigger text font size'], ['easeofaccess-visualeffects', 'Visual effects', 'transparency animations scrollbars'],
+    ['easeofaccess-mousepointer', 'Mouse pointer and touch', 'cursor size colour'], ['easeofaccess-cursor', 'Text cursor', 'caret'], ['easeofaccess-magnifier', 'Magnifier', 'zoom'],
+    ['easeofaccess-colorfilter', 'Colour filters', 'colour blind grayscale invert color'], ['easeofaccess-highcontrast', 'Contrast themes', 'high contrast'], ['easeofaccess-narrator', 'Narrator', 'screen reader'],
+    ['easeofaccess-audio', 'Audio (accessibility)', 'mono audio'], ['easeofaccess-closedcaptioning', 'Captions', 'subtitles live captions'], ['easeofaccess-keyboard', 'Keyboard (accessibility)', 'sticky keys filter keys on-screen keyboard'],
+    ['easeofaccess-mouse', 'Mouse keys', 'mouse keys'], ['easeofaccess-eyecontrol', 'Eye control', 'eye tracking'],
+    ['privacy', 'Privacy & security', 'privacy permissions'], ['windowsdefender', 'Windows Security', 'antivirus defender firewall virus'], ['findmydevice', 'Find my device', 'lost laptop'],
+    ['developers', 'For developers', 'developer mode sudo'], ['privacy-location', 'Location', 'gps location'], ['privacy-webcam', 'Camera permissions', 'camera access'],
+    ['privacy-microphone', 'Microphone permissions', 'mic access'], ['privacy-general', 'General privacy', 'advertising id'], ['privacy-speech', 'Online speech recognition', 'speech privacy'],
+    ['privacy-feedback', 'Diagnostics & feedback', 'telemetry diagnostic data'], ['privacy-activityhistory', 'Activity history', 'timeline'], ['privacy-searchpermissions', 'Search permissions', 'safesearch cloud search'],
+    ['cortana-windowssearch', 'Searching Windows', 'search index indexing'], ['privacy-broadfilesystemaccess', 'File system access', 'files permission'], ['privacy-contacts', 'Contacts permissions', 'contacts'],
+    ['privacy-calendar', 'Calendar permissions', 'calendar'], ['privacy-backgroundapps', 'Background apps', 'background'],
+    ['windowsupdate', 'Windows Update', 'updates update'], ['windowsupdate-history', 'Update history', 'installed updates'], ['windowsupdate-options', 'Advanced update options', 'active hours'],
+    ['windowsupdate-restartoptions', 'Restart options', 'restart'], ['windowsinsider', 'Windows Insider Program', 'insider preview beta'], ['delivery-optimization', 'Delivery Optimization', 'download bandwidth']];
+  const SCAT = [[/^network|^datausage/, 'Network & internet', 'wifi', 'sky'],
+    [/^bluetooth|^connecteddevices|^printers|^mobile-devices|^pen$|^autoplay|^usb|^devices-touchpad|^mousetouchpad|^camera$/, 'Bluetooth & devices', 'bt', 'blue'],
+    [/^personalization|^colors|^themes|^lockscreen|^taskbar|^fonts/, 'Personalisation', 'palette', 'pink'],
+    [/^apps|^defaultapps|^maps|^videoplayback|^startupapps|^advanced-apps|^optionalfeatures/, 'Apps', 'appsgrid', 'purple'],
+    [/^yourinfo|^emailandaccounts|^signinoptions|^workplace|^otherusers|^family|^backup/, 'Accounts', 'person', 'green'],
+    [/^dateandtime|^regionlanguage|^typing|^speech|^keyboard/, 'Time & language', 'globe', 'teal'],
+    [/^gaming/, 'Gaming', 'pad', 'lime'], [/^easeofaccess/, 'Accessibility', 'access', 'blue'],
+    [/^privacy|^windowsdefender|^findmydevice|^developers|^cortana/, 'Privacy & security', 'shield', 'slate'],
+    [/^windowsupdate|^windowsinsider|^delivery/, 'Windows Update', 'update', 'sky'], [/./, 'System', 'laptop', 'blue']];
+  const SGLYPH = { display: 'display', 'display-advancedgraphics': 'display', nightlight: 'moon', sound: 'vol', 'sound-devices': 'vol', 'apps-volume': 'vol', notifications: 'bell',
+    quiethours: 'moon', powersleep: 'power', batterysaver: 'battery', storagesense: 'drive', storagepolicies: 'drive', multitasking: 'appsgrid', activation: 'key', troubleshoot: 'info',
+    recovery: 'update', project: 'display', clipboard: 'copy', remotedesktop: 'display', about: 'info', crossdevice: 'phone', deviceencryption: 'lock', bluetooth: 'bt',
+    connecteddevices: 'bt', printers: 'printer', 'mobile-devices': 'phone', pen: 'text', 'devices-touchpad': 'mouse', mousetouchpad: 'mouse', camera: 'camera', usb: 'drive',
+    'network-wifi': 'wifi', 'network-wifisettings': 'wifi', 'network-ethernet': 'web', 'network-vpn': 'shield', 'network-mobilehotspot': 'wifi', 'network-proxy': 'web',
+    'network-status': 'web', 'personalization-background': 'img', colors: 'palette', themes: 'palette', lockscreen: 'lock', 'personalization-textinput': 'keyboard',
+    'personalization-start': 'appsgrid', taskbar: 'display', fonts: 'text', appsfeatures: 'appsgrid', defaultapps: 'appsgrid', startupapps: 'power', maps: 'pin',
+    yourinfo: 'person', signinoptions: 'key', backup: 'update', dateandtime: 'clock', regionlanguage: 'globe', typing: 'keyboard', speech: 'mic', keyboard: 'keyboard',
+    'gaming-gamebar': 'pad', 'gaming-gamedvr': 'camera', 'gaming-gamemode': 'pad', 'easeofaccess-display': 'text', 'easeofaccess-mousepointer': 'mouse',
+    'easeofaccess-magnifier': 'search', 'easeofaccess-keyboard': 'keyboard', 'easeofaccess-mouse': 'mouse', 'easeofaccess-audio': 'vol', 'easeofaccess-narrator': 'vol',
+    windowsdefender: 'shield', findmydevice: 'pin', developers: 'hash', 'privacy-location': 'pin', 'privacy-webcam': 'camera', 'privacy-microphone': 'mic',
+    'cortana-windowssearch': 'search', windowsupdate: 'update' };
+  const setMeta = u => { const [, cat, ic, tone] = SCAT.find(([re]) => re.test(u)); return { cat, ic: SGLYPH[u] || ic, tone }; };
+  // tasks: [title, where it lives, words people type, what opens it ("ms:" a Settings page, "sys:" a Control Panel page or tool), icon]
+  const DEEP = [
+    ['Change what closing the lid does', 'Control Panel › Power Options', 'lid close closing laptop lid shut', 'sys:lid', 'laptop'],
+    ['Choose what the power button does', 'Control Panel › Power Options', 'power button sleep button press', 'sys:lid', 'power'],
+    ['Turn on hibernate', 'Control Panel › Power Options', 'hibernate hibernation fast startup', 'sys:lid', 'moon'],
+    ['Choose or edit a power plan', 'Control Panel › Power Options', 'power plan high performance balanced power saver', 'sys:powerplan', 'power'],
+    ['Change when the PC sleeps', 'Settings › System › Power & battery', 'sleep after sleep timeout when pc sleeps idle', 'ms:powersleep', 'moon'],
+    ['Turn off the screen after…', 'Settings › System › Power & battery', 'screen timeout screen off display off turn off display', 'ms:powersleep', 'display'],
+    ['Power mode', 'Settings › System › Power & battery', 'power mode best performance efficiency balanced', 'ms:powersleep', 'power'],
+    ['Battery usage by app', 'Settings › System › Power & battery', 'battery usage drain apps using battery', 'ms:batterysaver-usagedetails', 'battery'],
+    ['Change the screen resolution', 'Settings › System › Display', 'resolution screen size pixels', 'ms:display', 'display'],
+    ['Change the size of text, apps and other items', 'Settings › System › Display', 'scale scaling zoom 125 150 bigger smaller', 'ms:display', 'display'],
+    ['Change the refresh rate', 'Settings › System › Display › Advanced display', 'refresh rate hz 60hz 120hz 144hz', 'ms:display-advanced', 'display'],
+    ['Use HDR', 'Settings › System › Display › HDR', 'hdr high dynamic range', 'ms:display-hdr', 'display'],
+    ['Change brightness', 'Settings › System › Display', 'brightness dim brighter darker', 'ms:display', 'sun'],
+    ['Rotate the screen', 'Settings › System › Display', 'rotate orientation portrait landscape flip screen', 'ms:display', 'display'],
+    ['Extend or duplicate displays', 'Settings › System › Display', 'second monitor extend duplicate multiple displays projector external', 'ms:display', 'display'],
+    ['Calibrate display colour', 'Control Panel › Display', 'calibrate colour color calibration gamma', 'sys:colorcal', 'palette'],
+    ['Change the screen saver', 'Control Panel › Personalisation', 'screen saver screensaver', 'sys:screensaver', 'display'],
+    ['Change the sound output device', 'Settings › System › Sound', 'output device speakers headphones audio output switch', 'ms:sound', 'vol'],
+    ['Change microphone settings', 'Settings › System › Sound', 'microphone mic input volume level test', 'ms:sound', 'mic'],
+    ['Sound Control Panel', 'Control Panel › Sound', 'sound control panel playback devices spatial audio enhancements', 'sys:soundcpl', 'vol'],
+    ['Recording devices', 'Control Panel › Sound', 'recording devices microphone properties levels', 'sys:recording', 'mic'],
+    ['Change system sounds', 'Control Panel › Sound', 'system sounds notification sound beep startup sound', 'sys:sounds', 'bell'],
+    ['Change mouse pointer speed', 'Settings › Bluetooth & devices › Mouse', 'pointer speed mouse speed sensitivity dpi', 'ms:mousetouchpad', 'mouse'],
+    ['Change the scrolling direction', 'Settings › Bluetooth & devices › Touchpad', 'scroll direction natural scrolling reverse scroll', 'ms:devices-touchpad', 'mouse'],
+    ['Swap the left and right mouse buttons', 'Settings › Bluetooth & devices › Mouse', 'left handed primary button swap', 'ms:mousetouchpad', 'mouse'],
+    ['Touchpad gestures', 'Settings › Bluetooth & devices › Touchpad', 'three finger four finger gestures swipe tap', 'ms:devices-touchpad', 'mouse'],
+    ['Mouse properties', 'Control Panel › Mouse', 'double click speed pointer scheme cursor theme mouse properties', 'sys:mousecpl', 'mouse'],
+    ['Change the key repeat speed', 'Control Panel › Keyboard', 'key repeat delay rate cursor blink', 'sys:keyboardcpl', 'keyboard'],
+    ['Sticky keys', 'Settings › Accessibility › Keyboard', 'sticky keys filter keys toggle keys', 'ms:easeofaccess-keyboard', 'keyboard'],
+    ['On-screen keyboard', 'Settings › Accessibility › Keyboard', 'on screen keyboard osk', 'ms:easeofaccess-keyboard', 'keyboard'],
+    ['Add a keyboard layout or language', 'Settings › Time & language › Language & region', 'keyboard layout input language add language', 'ms:regionlanguage', 'keyboard'],
+    ['Change DNS or IP settings', 'Control Panel › Network Connections', 'dns ip address static ip adapter ipv4', 'sys:ncpa', 'web'],
+    ['Network adapters', 'Control Panel › Network Connections', 'network adapters connections ethernet adapter', 'sys:ncpa', 'web'],
+    ['Forget a Wi-Fi network', 'Settings › Network & internet › Wi-Fi', 'forget wifi saved networks known networks', 'ms:network-wifisettings', 'wifi'],
+    ['Network reset', 'Settings › Network & internet › Advanced', 'network reset reinstall adapters fix internet', 'ms:network-advancedsettings', 'update'],
+    ['Internet Options', 'Control Panel › Internet Options', 'internet options certificates', 'sys:inetcpl', 'web'],
+    ['Windows Defender Firewall', 'Control Panel › Firewall', 'firewall allow app through firewall', 'sys:firewall', 'shield'],
+    ['Edit environment variables', 'Control Panel › System', 'environment variables path java_home', 'sys:envvars', 'hash'],
+    ['Advanced system settings', 'Control Panel › System', 'advanced system settings system properties', 'sys:sysadv', 'laptop'],
+    ['Adjust visual effects and performance', 'Control Panel › System › Performance', 'visual effects animations performance options best performance', 'sys:perf', 'display'],
+    ['Change virtual memory (page file)', 'Control Panel › System › Performance', 'virtual memory page file pagefile swap', 'sys:perf', 'drive'],
+    ['Create a restore point', 'Control Panel › System Protection', 'restore point system restore protection', 'sys:protection', 'update'],
+    ['Remote Desktop settings', 'Control Panel › System › Remote', 'remote desktop remote assistance rdp allow', 'sys:remote', 'display'],
+    ['Device Manager', 'Windows Tools', 'device manager drivers hardware', 'sys:devmgmt', 'laptop'],
+    ['Disk Management', 'Windows Tools', 'disk management partitions format drive', 'sys:diskmgmt', 'drive'],
+    ['Free up disk space (Disk Cleanup)', 'Windows Tools', 'disk cleanup free space delete temporary', 'sys:cleanmgr', 'drive'],
+    ['Defragment and optimise drives', 'Windows Tools', 'defragment defrag optimise optimize trim', 'sys:defrag', 'drive'],
+    ['System Information', 'Windows Tools', 'system information msinfo specs hardware bios', 'sys:sysinfo', 'info'],
+    ['Services', 'Windows Tools', 'services background services', 'sys:services', 'gear'],
+    ['Task Scheduler', 'Windows Tools', 'task scheduler scheduled tasks', 'sys:taskschd', 'clock'],
+    ['Event Viewer', 'Windows Tools', 'event viewer logs errors crash', 'sys:eventvwr', 'info'],
+    ['Resource Monitor', 'Windows Tools', 'resource monitor cpu memory disk network usage', 'sys:resmon', 'bolt'],
+    ['Turn Windows features on or off', 'Control Panel › Programs', 'windows features hyper-v wsl sandbox net framework', 'sys:features', 'appsgrid'],
+    ['Control Panel', 'Windows Tools', 'control panel', 'sys:control', 'gear'],
+    ['Uninstall a program', 'Control Panel › Programs', 'uninstall program remove programs and features', 'sys:appwiz', 'appsgrid'],
+    ['Credential Manager', 'Control Panel › User Accounts', 'credential manager saved passwords credentials windows credentials', 'sys:credman', 'key'],
+    ['User accounts (netplwiz)', 'Control Panel › User Accounts', 'netplwiz user accounts automatic sign in auto login', 'sys:netplwiz', 'person'],
+    ['Show file extensions', 'Control Panel › File Explorer Options', 'file extensions show extensions file types', 'sys:folderopts', 'folder'],
+    ['Show hidden files and folders', 'Control Panel › File Explorer Options', 'hidden files show hidden folders', 'sys:folderopts', 'folder'],
+    ['Change the time zone', 'Settings › Time & language › Date & time', 'time zone timezone', 'ms:dateandtime', 'clock'],
+    ['Set the time automatically', 'Settings › Time & language › Date & time', 'set time automatically sync time clock wrong', 'ms:dateandtime', 'clock'],
+    ['Change date and number formats', 'Control Panel › Region', 'date format number format region format 24 hour', 'sys:intl', 'globe'],
+    ['Change the default browser', 'Settings › Apps › Default apps', 'default browser chrome edge firefox', 'ms:defaultapps', 'web'],
+    ['Choose the app that opens a file type', 'Settings › Apps › Default apps', 'open with default app file type association', 'ms:defaultapps', 'appsgrid'],
+    ['Snap windows', 'Settings › System › Multitasking', 'snap layouts snap windows split screen', 'ms:multitasking', 'appsgrid'],
+    ['Virtual desktops', 'Settings › System › Multitasking', 'virtual desktops multiple desktops', 'ms:multitasking', 'display'],
+    ['Clipboard history', 'Settings › System › Clipboard', 'clipboard history win v', 'ms:clipboard', 'copy'],
+    ['Taskbar alignment', 'Settings › Personalisation › Taskbar', 'taskbar alignment center centre left start button position', 'ms:taskbar', 'display'],
+    ['Automatically hide the taskbar', 'Settings › Personalisation › Taskbar', 'auto hide taskbar autohide', 'ms:taskbar', 'display'],
+    ['Turn on dark mode', 'Settings › Personalisation › Colours', 'dark mode dark theme light mode', 'ms:colors', 'moon'],
+    ['Transparency effects', 'Settings › Personalisation › Colours', 'transparency effects acrylic blur', 'ms:colors', 'palette'],
+    ['Change the accent colour', 'Settings › Personalisation › Colours', 'accent colour color highlight', 'ms:colors', 'palette'],
+    ['Change the lock screen picture', 'Settings › Personalisation › Lock screen', 'lock screen picture wallpaper spotlight', 'ms:lockscreen', 'lock'],
+    ['Change your account picture', 'Settings › Accounts › Your info', 'account picture profile photo avatar', 'ms:yourinfo', 'person'],
+    ['Set up a PIN or fingerprint', 'Settings › Accounts › Sign-in options', 'pin fingerprint windows hello face password change', 'ms:signinoptions', 'key'],
+    ['Dynamic lock', 'Settings › Accounts › Sign-in options', 'dynamic lock lock when away phone', 'ms:signinoptions-dynamiclock', 'lock'],
+    ['Check for updates', 'Settings › Windows Update', 'check for updates update windows', 'ms:windowsupdate', 'update'],
+    ['Pause updates', 'Settings › Windows Update', 'pause updates stop updates', 'ms:windowsupdate', 'update'],
+    ['Optional updates and drivers', 'Settings › Windows Update › Advanced', 'optional updates drivers', 'ms:windowsupdate-optionalupdates', 'update'],
+    ['Reset this PC', 'Settings › System › Recovery', 'reset this pc factory reset reinstall windows', 'ms:recovery', 'update'],
+    ['Advanced startup (BIOS / UEFI)', 'Settings › System › Recovery', 'advanced startup bios uefi boot menu safe mode', 'ms:recovery', 'power'],
+    ['Activate Windows', 'Settings › System › Activation', 'activate windows product key license', 'ms:activation', 'key'],
+    ['Developer mode', 'Settings › System › For developers', 'developer mode sideload sudo', 'ms:developers', 'hash'],
+    ['Location access', 'Settings › Privacy & security', 'location gps', 'ms:privacy-location', 'pin'],
+    ['Camera access', 'Settings › Privacy & security', 'camera webcam permission', 'ms:privacy-webcam', 'camera'],
+    ['Microphone access', 'Settings › Privacy & security', 'microphone mic permission', 'ms:privacy-microphone', 'mic'],
+    ['Find my device', 'Settings › Privacy & security', 'find my device lost stolen locate', 'ms:findmydevice', 'pin'],
+    ['Game Mode', 'Settings › Gaming', 'game mode gaming performance', 'ms:gaming-gamemode', 'pad'],
+    ['Pair a Bluetooth device', 'Settings › Bluetooth & devices', 'pair connect add device airpods headphones bluetooth', 'ms:connecteddevices', 'bt'],
+    ['Phone Link', 'Settings › Bluetooth & devices › Mobile devices', 'phone link android iphone your phone', 'ms:mobile-devices', 'phone'],
+    ['Add a printer or scanner', 'Settings › Bluetooth & devices › Printers', 'add printer scanner print', 'ms:printers', 'printer'],
+    ['Nearby sharing', 'Settings › System › Nearby sharing', 'nearby sharing share files', 'ms:crossdevice', 'phone'],
+    ['Delete temporary files', 'Settings › System › Storage', 'temporary files temp delete cleanup cache', 'ms:storagesense', 'drive'],
+    ['Add an optional feature', 'Settings › System › Optional features', 'optional features add feature', 'ms:optionalfeatures', 'appsgrid'],
+    ['Windows Mobility Center', 'Control Panel', 'mobility center brightness volume battery presentation', 'sys:mobility', 'laptop'],
+    ['Fonts', 'Control Panel › Fonts', 'install fonts fonts folder', 'sys:fonts', 'text']];
+  const SETX = {};                                                      // the old quick list's words ("airpods", "dnd" ...) join the matching page
+  SET.forEach(([k, name, w]) => { const u = SETU[k] === 'network' ? 'network-status' : SETU[k]; if (u) SETX[u] = (SETX[u] || '') + ' ' + name + ' ' + w.replace(/,/g, ' '); });
+  const mkSet = (t, where, kw, go, ic, tone, page) => ({ t, where, go, ic, tone, page, kwText: wordsOf(kw).join(' '), kw: new Set(wordsOf(kw)), words: wordsOf(t + ' ' + kw) });
+  const SETIX = [...ALLSET.map(([u, name, kw]) => { const m = setMeta(u); return mkSet(name, 'Settings › ' + m.cat, kw + ' ' + (SETX[u] || ''), 'ms:' + u, m.ic, m.tone, true); }),
+    ...DEEP.map(([t, where, kw, go, ic]) => mkSet(t, where, kw, go, ic, go.startsWith('sys:') ? 'graphite' : setMeta(go.slice(3)).tone, false))];
+  function settingsRows(q, f) {
+    const qq = q.replace(/^(open|go to|show|change|how (?:to|do i))\s+/, '').replace(/\s+settings?$/, '').replace(/^settings?\s+/, '');
+    const qw = wordsOf(qq); if (!qw.length || (f === 'all' && qq.length < 2)) return null;
+    const joined = qw.join(' '), hits = [];
+    for (const s of SETIX) {
+      if (!qw.every(w => s.words.some(x => x.startsWith(w) || (w.length >= 5 && dl(w, x) <= 1)))) continue;
+      const tn = wordsOf(s.t).join(' ');
+      const sc = tn === joined ? 4 : (qw.length === 1 && qw[0].length >= 3 && s.kw.has(qw[0])) ? 3 : tn.startsWith(joined) ? 2.6 : joined.length >= 4 && s.kwText.includes(joined) ? 2.4 : 1.5;
+      hits.push([sc + (s.page ? .05 : 0), s]);
+    }
+    hits.sort((a, b) => b[0] - a[0] || a[1].t.length - b[1].t.length);
+    return hits.slice(0, f === 'settings' ? 40 : 6).map(([sc, s], i) => ({
+      id: 'set:' + s.go + ':' + s.t, g: 'Settings', kind: 'set', t: s.t, s: s.where, sys: s.go.startsWith('sys:'), icon: glyph(s.ic, s.tone), key: 'Open',
+      pr: (f === 'settings' ? 2 + sc / 10 : sc >= 3 ? 2.35 : sc >= 2.4 ? 1.55 : 1.1) - i * .001,
+      run: () => { if (s.go.startsWith('sys:')) call('sys', { id: s.go.slice(4) }); else call('mss', { u: 'ms-settings:' + s.go.slice(3) }); hide(); } }));
+  }
+
+  /* ---- apps: Launchpad's own list, with Windows' actions for each (run as administrator, file location, pin to Start) ---- */
+  function appRows(q, f) {
+    return matchApps(q).slice(0, f === 'apps' ? 60 : 6).map((a, i) => ({ id: 'app:' + a.k, g: 'Apps', kind: 'app', app: a, t: a.name, s: 'App', icon: { kind: 'img', src: iconUrl(a.k) }, key: 'Open',
+      pr: (a.r <= 1.2 ? 2.45 : a.r <= 2.4 ? 1.7 : 1.15) + (a.u < 14 ? .04 : 0) - i * .002, run: () => launch(tile(a)) }));
+  }
+  function appInfo(a) {
+    if (!HAS_HELPER) return null;
+    return look('av:' + a.k, async () => {
+      const [v, r] = await Promise.all([getJ(`${base}/appverbs?${q2s({ k: a.k })}`).catch(() => null), getJ(`${base}/apprecent?${q2s({ k: a.k })}`).catch(() => null)]);
+      return { verbs: (v && v.verbs) || [], recent: Array.isArray(r) ? r : [] };
+    });
+  }
+
+  /* ---- your files: Windows' own index (OneDrive too), with the icons and thumbnails Explorer shows ---- */
+  const FGROUP = { folder: 'Folders', img: 'Photos', note: 'Music', film: 'Videos', doc: 'Documents', file: 'Files' };
+  const FLABEL = { docs: 'Documents', folders: 'Folders', photos: 'Photos', music: 'Music', videos: 'Videos', files: 'Files' };
+  function fileItem(f, pr, extra) {
+    const t = fileIcon(f), media = t === 'img' || t === 'film';
+    return { id: 'f:' + f.p, g: FGROUP[t], kind: 'file', f, t: f.n, s: [extra, where_(f.p, f.od), when(f.d)].filter(Boolean).join('  ·  ') + (f.c ? '  ·  mentions it' : ''),
+      icon: HAS_HELPER ? { kind: 'img', src: thumbUrl(f.p, media ? 160 : 128, !media), cover: media } : glyph(t), pr, key: 'Open',
+      run: () => { call('openf', { p: f.p }); hide(); }, alt: () => { call('reveal', { p: f.p }); hide(); } };   // Shift+Enter: show it in its folder
+  }
+  function files(q, f, ext) {
+    if (!HAS_HELPER || q.length < 2) return null;
+    const kind = f === 'files' || f === 'all' ? '' : f, G = FLABEL[f], n = f === 'all' ? 14 : 30;
+    const get = ph => () => helperJ('files', { q, kind, n, ph }).then(j => Array.isArray(j) ? j : []);
+    const quick = look(`files:n:${kind}:${q}`, get('n')), more = look(`files:c:${kind}:${q}`, get('c'));   // both start at once; each shows the moment it lands
+    const seenP = new Set(), merged = [];
+    for (const e of [quick, more]) if (e.state === 'ok') for (const x of e.data) if (!seenP.has(x.p)) { seenP.add(x.p); merged.push(x); }
+    const e = { data: merged };
+    if (!merged.length) {
+      if (quick.state === 'load' || more.state === 'load') return f !== 'all' ? [{ id: 'msg', g: G, ic: 'search', t: 'Searching your files…', s: q, pr: 1, cls: 'load' }] : null;
+      return f !== 'all' ? [{ id: 'msg', g: G, ic: 'search', t: 'No files found', s: `Nothing named or mentioning “${q}”`, pr: 1 }] : null;
+    }
+    const ql = q.toLowerCase(), wordStart = new RegExp('(^|[^a-z0-9])' + ql.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+    let data = ext ? e.data.filter(x => x.x === ext) : e.data;
+    if (!data.length) return f !== 'all' ? [{ id: 'msg', g: G, ic: 'search', t: 'No files found', s: `No ${ext ? ext.slice(1).toUpperCase() + 's' : 'files'} named “${q}”`, pr: 1 }] : null;
+    const list = f === 'all' ? data.filter(x => (!x.c || /^\.(docx?|pdf|pptx?|xlsx?|odt|rtf|pages|key|numbers|epub)$/.test(x.x)) && (ql.length > 3 || x.c || wordStart.test(x.n))) : data;
+    if (!list.length) return null;
+    return list.map((x, i) => {
+      const nm = x.n.toLowerCase(), it = fileItem(x, f !== 'all' ? 2 - i * .01 : (nm.replace(/\.[^.]+$/, '') === ql ? 2.4 : nm.startsWith(ql) ? 1.3 : .9) - i * .01);
+      if (G) it.g = G; return it;
+    });
+  }
+  function recent(q) {                                                  // "recent", "recent files"
+    if (!HAS_HELPER || !/^(recent|recents|recent files|recent documents|recently opened|last opened)$/.test(q)) return null;
+    const e = look('recent', () => helperJ('recent', { n: 16 }).then(j => Array.isArray(j) ? j : []));
+    if (e.state !== 'ok') return [{ id: 'msg', g: 'Recent', ic: 'recent', t: 'Recent files…', s: 'Looking', pr: 3, cls: 'load' }];
+    return e.data.slice(0, 14).map((x, i) => { const it = fileItem(x, 3 - i * .01); it.g = 'Recent'; return it; });
+  }
+
+  /* ---- the web (Google's suggestions, DuckDuckGo's instant answer) and the Microsoft Store ---- */
+  const webItem = (t, wq, pr, s) => ({ id: 'web:' + wq, g: 'Search the web', kind: 'web', wq, t, s: s || 'Search the web', icon: glyph('search', 'google'), key: 'Search', pr,
+    run: () => { call('web', { q: wq }); hide(); } });
+  function webSuggest(q, f, raw) {
+    if (!HAS_HELPER || q.length < 2 || (f === 'all' && q.length < 3)) return null;
+    const e = look('sug:' + q, () => helperJ('suggest', { q: raw }).then(j => j || null));
+    if (e.state !== 'ok') return null;
+    const out = [], d = e.data.d, g = e.data.g;
+    const ans = d && typeof d.Answer === 'string' ? d.Answer.trim() : '';
+    if (ans) out.push({ id: 'ddg:' + ans, g: 'Answers', ic: 'web', t: ans, s: `DuckDuckGo  ·  ${d.AnswerType || 'answer'}`, copy: ans, pr: f === 'web' ? 3 : 1.6 });
+    if (d && d.AbstractText && (f === 'web' || !appHit)) out.push({ id: 'ddga:' + d.Heading, g: 'Answers', ic: 'book', t: d.Heading || raw, s: d.AbstractSource || 'DuckDuckGo', key: 'Read', pr: f === 'web' ? 2.5 : 1.25,
+      big: { paras: [d.AbstractText], img: d.Image ? (/^https?:/.test(d.Image) ? d.Image : 'https://duckduckgo.com' + d.Image) : null }, run: () => { call('web', { q: raw }); hide(); } });
+    const sugg = (Array.isArray(g) && Array.isArray(g[1]) ? g[1] : []).filter(s => s.toLowerCase() !== q).slice(0, f === 'web' ? 8 : 3);
+    sugg.forEach((s, i) => out.push(webItem(s, s, (f === 'web' ? 2 : .5) - i * .01)));
+    return out;
+  }
+  function storeApps(q, f) {
+    if (!HAS_HELPER || q.length < 3 || (f === 'all' && appHit)) return null;
+    const e = look('store:' + q, () => helperJ('store', { q, n: f === 'store' ? 8 : 3 }).then(j => Array.isArray(j) ? j : []));
+    if (e.state !== 'ok') return f === 'store' && e.state === 'load' ? [{ id: 'msg', g: 'Microsoft Store', ic: 'store', t: 'Searching the Microsoft Store…', s: q, pr: 1, cls: 'load' }] : null;
+    if (!e.data.length) return f === 'store' ? [{ id: 'msg', g: 'Microsoft Store', ic: 'store', t: 'Nothing in the Microsoft Store', s: q, pr: 1 }] : null;
+    return e.data.slice(0, f === 'store' ? 8 : 3).map((x, i) => ({ id: 'store:' + x.id, g: 'Microsoft Store', kind: 'store', x, t: x.name, s: x.pub || 'Microsoft Store',
+      icon: x.logo ? { kind: 'img', src: x.logo, plate: true } : glyph('store', 'blue'), key: 'Get', pr: (f === 'store' ? 2 : .6) - i * .01,
+      run: () => { call('storeopen', { id: x.id }); hide(); } }));
+  }
+
   /* ---- put it together ---- */
-  let ansList = [], sel = 0, appHit = false, liveT = 0;
-  const MODS = [q => mine(q, false), q => music(q, false), timer, stopwatch, funFact, translate, calc_, currency, units, bases, worldClock, dates, battery, luck, system, define, wiki, weather];
+  let ansList = [], sel = 0, appHit = false, liveT = 0, filt = 'all', resView = [], lastQ = null, userMoved = false, hero = null;
+  // [module, group its rows go in] (rows without a group become Answers, or Folders for the known folders)
+  const MODS = [[q => mine(q, false), 'YouTube Music'], [q => music(q, false), 'YouTube Music'], [timer], [stopwatch], [funFact], [translate], [calc_], [currency], [units], [bases],
+    [worldClock], [dates], [battery], [luck], [system], [define], [wiki], [weather]];
   function calc_(q) {
     q = q.replace(/^(what(?:'s| is)|calculate|calc|compute|solve|=)\s*/, '').replace(/\?$/, '');
     if (/^\d+(\.\d+)?$/.test(q)) return null;                       // a bare number is not a sum
@@ -1914,72 +2454,267 @@
     for (const k of KEYWORDS) { const d = dl(m[1], k), tol = k.length >= 7 ? 2 : 1; if (d <= tol && d < bd) { bd = d; best = k; } }
     return best ? best + (m[2] || '') : q;
   }
+  function normalize(a, grp) {                                          // the instant answers' rows, made into results like the rest
+    if (!a.icon) a.icon = a.sw ? { kind: 'sw', color: a.sw } : a.art ? { kind: 'img', src: a.art, cover: true, round: a.round } : glyph(a.ic || 'search');
+    if (!a.g) a.g = grp || (a.ic === 'folder' ? 'Folders' : 'Answers');
+    if (!a.kind) a.kind = 'ans';
+    if (!a.id || a.id === 'msg') a.id = a.g + ':' + a.t;
+    return a;
+  }
+  // group, how many show in "All", and the filter its "See all" opens
+  const GROUPS = [['Recent', 14], ['Apps', 4, 'apps'], ['Settings', 4, 'settings'], ['Documents', 4, 'docs'], ['Folders', 3, 'folders'], ['Photos', 4, 'photos'], ['Music', 3, 'music'],
+    ['Videos', 3, 'videos'], ['Files', 3, 'files'], ['YouTube Music', 4], ['Answers', 4], ['Search the web', 4, 'web'], ['Microsoft Store', 3, 'store']];
   let curRaw = '';
   function answers(rawQ) {
+    const sf = splitFilter(rawQ); filt = sf.f; rawQ = sf.q;                 // "docs: report", "settings: mouse", "store: spotify" ...
+    let ext = '';
+    if (filt === 'all') {                                               // "jeet photos", "photos of jeet", "jeet pdf", "claude folder": that kind of file
+      const t = rawQ.trim(), KW = '(photos?|pictures?|pics?|images?|videos?|movies?|clips?|docs?|documents?|pdfs?|folders?|files?|apps?|applications?|programs?|settings?|songs?|music|audio|tracks?|store|web|online)';
+      const m = t.match(new RegExp('^(.+?)\\s+' + KW + '$', 'i')) || t.match(new RegExp('^' + KW + '\\s+(?:of|named|called|with|about|from|for)?\\s*(.+)$', 'i'));
+      if (m) {
+        const word = (/^(.+?)\s+\S+$/.test(t) && m[2] && new RegExp(KW + '$', 'i').test(t) ? m[2] : m[1]).toLowerCase(), term = (word === m[1].toLowerCase() ? m[2] : m[1]).trim();
+        const kind = /^(photo|picture|pic|image)/.test(word) ? 'photos' : /^(video|movie|clip)/.test(word) ? 'videos' : /^(doc|pdf)/.test(word) ? 'docs' : /^folder/.test(word) ? 'folders'
+          : /^(app|application|program)/.test(word) ? 'apps' : /^setting/.test(word) ? 'settings' : /^(song|music|audio|track)/.test(word) ? 'music' : word === 'store' ? 'store' : /^(web|online)$/.test(word) ? 'web' : 'files';
+        const fullIsApp = matchApps(t.toLowerCase()).some(a => a.r <= 1.2);            // "google photos", "microsoft store" are apps
+        const leading = t.toLowerCase().startsWith(word), command = /^(play|ytm|yt music|youtube music|listen to|put on)\b/i.test(t);   // "music arijit" stays a YouTube Music search
+        if (term && !fullIsApp && !command && !(leading && kind === 'music') && !/^(recent|recents|my|all)$/i.test(term)) { filt = kind; rawQ = term; if (/^pdf/.test(word)) ext = '.pdf'; }
+      }
+    }
     curRaw = rawQ.trim().replace(/\s+/g, ' ');
     const q = fixKeyword(rawQ.trim().toLowerCase().replace(/\s+/g, ' '));
+    resView = []; hero = null;
     if (!q) return [];
     wanted.clear();
     let out = [];
-    for (const f of MODS) { try { const r = f(q); if (r && r.length) out.push(...r); } catch (_) {} }
-    if (!out.length && !appHit && q.length >= 3 && /[a-z\u00c0-\uffff]/i.test(q) && !ENG[q.split(' ')[0]] && !SITES[q]) { try { out.push(...(mine(q, true) || []), ...(music(q, true) || [])); } catch (_) {} }
-    try { out.push(...web(q, rawQ.trim())); } catch (_) {}
+    const add = (f, grp) => { try { const r = f(); if (r && r.length) out.push(...r.map(a => normalize(a, grp))); } catch (err) { console.warn('search', err); } };
+    if (filt === 'all') {
+      add(() => appRows(q, filt));
+      for (const [f, grp] of MODS) add(() => f(q), grp);
+      add(() => recent(q)); add(() => files(q, 'all')); add(() => settingsRows(q, 'all'));
+      if (!out.some(a => a.pr >= 2.3) && !appHit && q.length >= 3 && /[a-z\u00c0-\uffff]/i.test(q) && !ENG[q.split(' ')[0]] && !SITES[q])
+        add(() => [...(mine(q, true) || []), ...(music(q, true) || [])], 'YouTube Music');
+      if (!out.some(a => a.hero && a.pr >= 3)) add(() => webSuggest(q, 'all', curRaw));
+      add(() => storeApps(q, 'all')); add(() => web(q, rawQ.trim()));
+    } else if (filt === 'apps') add(() => appRows(q, 'apps'));
+    else if (filt === 'settings') add(() => settingsRows(q, 'settings') || [{ id: 'msg', g: 'Settings', ic: 'gear', t: 'No settings found', s: `Nothing matches “${curRaw}”`, pr: 1 }]);
+    else if (filt === 'web') add(() => webSuggest(q, 'web', curRaw));
+    else if (filt === 'store') add(() => storeApps(q, 'store'));
+    else add(() => q === 'recent' ? recent(q) : files(q, filt, ext));        // docs / folders / photos / music / videos / files
+    if ((filt === 'all' || filt === 'web') && q.length > 1 && !out.some(a => a.kind === 'ans' && a.run && /^Search /.test(a.t)))   // always: search the web for it
+      out.push(normalize({ ...webItem(`Search Google for “${rawQ.trim()}”`, rawQ.trim(), 0, 'Opens in your browser'), id: 'web:google' }));   // one steady row: it updates in place as you type
+    const seen = new Set(); out = out.filter(a => !seen.has(a.id) && seen.add(a.id));
     out.sort((a, b) => b.pr - a.pr);
-    const hero = out.findIndex(a => a.hero); out.forEach((a, k) => { if (k !== hero) a.hero = false; });
-    if (hero > 0) out.unshift(out.splice(hero, 1)[0]);
-    out = out.slice(0, 5);
-    if (!out.some(a => a.run && /^Search /.test(a.t)) && q.length > 1)                     // last row: search the web
-      out.push({ ic: 'search', t: `Search Google for “${rawQ.trim()}”`, s: 'Opens in your browser', key: 'Search', pr: 0, run: () => { call('web', { q: rawQ.trim() }); hide(); } });
-    return out;
+    const lead = out.find(a => !a.cls || a.pr >= 2.5);                 // a loading row leads only if it's a strong one (weather, wiki ...)
+    hero = filt === 'all' && lead && lead.kind === 'ans' && (lead.hero || lead.big || lead.pr >= 2.5) ? lead : null;
+    if (hero) hero.id = 'hero:' + (hero.ic || hero.g);                // the card updates in place as you type (2+2 -> 2+23), it doesn't re-enter
+    const known = new Set(GROUPS.map(g => g[0]));
+    out.forEach(a => { if (!known.has(a.g)) a.g = 'Answers'; });
+    const view = [];
+    for (const [g, , see] of GROUPS) {
+      const all = out.filter(a => a !== hero && a.g === g); if (!all.length) continue;
+      const pills = g === 'Search the web' || g === 'Answers', n = filt !== 'all' ? 70 : pills ? 5 : COLS;
+      view.push({ g, pills, items: all.slice(0, n), top: all[0].pr,
+        see: filt === 'all' && see && (all.length > n || /^(Apps|Documents|Folders|Photos|Music|Videos|Files|Microsoft Store)$/.test(g)) ? see : null });
+    }
+    if (filt === 'all') view.sort((a, b) => (a.g === 'Search the web') - (b.g === 'Search the web') || b.top - a.top);   // the strongest kind first, the web last
+    resView = view;
+    return [...(hero ? [hero] : []), ...view.flatMap(v => v.items)];
+  }
+
+  /* ---- ShadowUI: drawing the results ----
+     Everything found is a Launchpad tile, in a row per kind (the strongest kind first); a strong answer is a card across the top;
+     web searches and one-line answers are pills. The highlight is Launchpad's own and moves like it: down / up between rows, Tab
+     along them. The caption at the bottom says what's selected and what you can do (Enter = the first action, Shift+Enter = show
+     it in its folder, Ctrl+Shift+Enter = run an app as administrator). */
+  let capActs = [], freshT = 0, shownIds = new Set(), capFocus = -1;
+  const loadedImg = window.__lpLd = window.__lpLd || new Set();              // pictures already shown once: no fade next time
+  const imgA = src => loadedImg.has(src) ? ' class="ld"' : ` onload="__lpLd.add(this.src);this.classList.add('ld')"`;
+  function icHtml(a) {                                                  // a result's picture, at Launchpad's icon size
+    const c = a.icon || glyph('search');
+    if (a.kind === 'file' && HAS_HELPER) {
+      const t = fileIcon(a.f), media = t === 'img' || t === 'film';
+      const u = thumbUrl(a.f.p, media ? 160 : 256, !media);
+      return `<div class="ic sxim${media ? ' cover' : ''}"><img alt="" decoding="async" draggable="false"${imgA(u)} src="${esc(u)}" onerror="this.style.visibility='hidden';this.parentNode.classList.add('nf')"></div>`;
+    }
+    if (c.kind === 'img') return `<div class="ic sxim${c.cover ? ' cover' : ''}${c.round ? ' round' : ''}${c.plate ? ' plate' : ''}"><img alt="" decoding="async" draggable="false" referrerpolicy="no-referrer"${imgA(c.src)} src="${esc(c.src)}" onerror="this.style.visibility='hidden';this.parentNode.classList.add('nf')"></div>`;
+    if (c.kind === 'sw') return `<div class="ic sxsw" style="background:${esc(c.color)}"></div>`;
+    const [t1, t2] = TONE[c.tone] || TONE.gray;
+    return `<div class="ic sxgl" style="--t1:${t1};--t2:${t2}">${svg(c.ic)}</div>`;
+  }
+  function tileHtml(a, k, i) {
+    let ic;
+    if (a.kind === 'app') {                                             // an app: exactly its Launchpad tile (same icon, same tint)
+      const st = tiles.get(a.app.k)?.firstChild?.getAttribute('style') || '';
+      ic = `<div class="ic" style="${esc(st)}"><img alt="" draggable="false" decoding="async"${imgA(iconUrl(a.app.k))} src="${esc(iconUrl(a.app.k))}"></div>`;
+    } else ic = icHtml(a);
+    return `<div class="lpi sx${a.kind === 'app' ? ' sxapp' : ''}${shownIds.has(a.id) ? '' : ' nw'}${k === sel ? ' sel' : ''}${a.cls ? ' ' + a.cls : ''}" data-a="${k}" style="--i:${i}" role="option" aria-selected="${k === sel}" aria-label="${esc(a.t + (a.s ? ', ' + a.s : ''))}">${ic}<span>${esc(a.t)}</span></div>`;
+  }
+  function pillHtml(a, k, i) {
+    const ans = a.kind !== 'web';
+    return `<div class="sxpl${ans ? ' ans' : ''}${shownIds.has(a.id) ? '' : ' nw'}${k === sel ? ' sel' : ''}${a.cls ? ' ' + a.cls : ''}" data-a="${k}" style="--i:${i}" role="option" aria-selected="${k === sel}" aria-label="${esc(a.t + (a.s ? ', ' + a.s : ''))}">${ans ? iconHtml(a.icon) : svg('search')}` +
+      `<span><b>${esc(a.t)}</b>${ans && a.s ? `<small>${esc(a.s)}</small>` : ''}</span></div>`;
+  }
+  function heroHtml(a, k) {
+    const cls = a.big || a.heroSmall || String(a.t).length > 22 ? ' long' : a.mono ? ' mono' : a.wrapT ? ' free' : '';
+    const article = a.big ? `<div class="aw">${a.big.img ? `<img src="${esc(a.big.img)}" alt="">` : ''}${a.big.paras.map(t => { const h = t.match(/^=+\s*(.*?)\s*=+$/); return h ? (h[1] ? `<h4>${esc(h[1])}</h4>` : '') : `<p>${esc(t)}</p>`; }).join('')}</div>` : '';
+    return `<div class="sxh${shownIds.has(a.id) ? '' : ' nw'}${k === sel ? ' sel' : ''}${a.cls ? ' ' + a.cls : ''}" data-a="${k}" role="option" aria-selected="${k === sel}" aria-label="${esc(a.t + (a.s ? ', ' + a.s : ''))}"><div class="sxhh">${icHtml(a)}<div class="sxhx">` +
+      `<div class="sxht${a.wrapT ? ' free' : cls}">${esc(a.t)}</div>${a.s ? `<div class="sxhs">${esc(a.s)}</div>` : ''}</div></div>${article}</div>`;
   }
   function renderAns() {
-    const was = ansEl.classList.contains('on');
-    ansEl.classList.toggle('on', ansList.length > 0);
-    if (ansList.length) { if (!was) gAns?.pop(.96, 420, .85); else gAns?.animate(120); }
-    ansRows.innerHTML = ansList.map((a, k) => {
-      const icon = a.ic === 'swatch' ? `<div class="ai sw" style="background:${a.sw}"></div>`
-        : a.art ? `<div class="ai art${a.round ? ' round' : ''}"><img src="${esc(a.art)}" alt="" referrerpolicy="no-referrer"></div>` : `<div class="ai">${svg(a.ic)}</div>`;
-      const key = a.key || (a.copy != null ? 'Copy' : 'Open');
-      return `<div class="ar${a.hero ? ' hero' : ''}${k === sel ? ' sel' : ''}${a.cls ? ' ' + a.cls : ''}" data-a="${k}">${icon}<div class="tx">` +
-        `<div class="at"${a.hero && (a.heroSmall || String(a.t).length > 26) ? ' style="font-size:2.7vh"' : ''}${a.wrapT ? ' style="white-space:normal;font-size:1.85vh;line-height:1.35"' : ''}${a.mono ? ' style="font-family:Consolas,monospace;font-size:2.3vh"' : ''}>${esc(a.t)}</div>` +
-        `${a.s ? `<div class="as${a.wrap ? ' wrap' : ''}">${esc(a.s)}</div>` : ''}` +
-        `${a.big ? `<div class="aw">${a.big.img ? `<img src="${esc(a.big.img)}" alt="">` : ''}${a.big.paras.map(t => { const h = t.match(/^=+\s*(.*?)\s*=+$/); return h ? (h[1] ? `<h4>${esc(h[1])}</h4>` : '') : `<p>${esc(t)}</p>`; }).join('')}</div>` : ''}</div><div class="ak">↵ ${esc(key)}</div></div>`;
-    }).join('');
+    const on = !!search.value.trim();
+    ansEl.classList.toggle('on', on);
+    let html = '', k = 0;
+    if (hero) html += heroHtml(hero, k++);
+    for (const grp of resView) {
+      html += `<section class="sxg" role="group" aria-label="${esc(grp.g)}"><h6>${esc(grp.g)}${grp.see ? `<b data-f="${grp.see}">See all</b>` : ''}</h6>`;
+      html += grp.pills ? `<div class="sxp">${grp.items.map((a, i) => pillHtml(a, k++, i)).join('')}</div>`
+                        : `<div class="sxr">${grp.items.map((a, i) => tileHtml(a, k++, i)).join('')}</div>`;
+      html += '</section>';
+    }
+    if (!html && on) { const lbl = (FILTERS.find(([f]) => f === filt) || [, ''])[1]; html = `<div class="lpNo">${filt === 'all' ? 'Type to search' : 'Type to search ' + esc(lbl.toLowerCase())}</div>`; }
+    if (ansRows.dataset.h !== html) {                                   // late look-ups only redraw when something changed - and without flashing the highlight
+      ansRows.classList.add('rr'); ansRows.innerHTML = html; ansRows.dataset.h = html;
+      requestAnimationFrame(() => requestAnimationFrame(() => ansRows.classList.remove('rr')));
+    }
+    shownIds = new Set(ansList.map(a => a.id));                         // what's on screen now: if it's still there after the next letter, it won't move
+    renderCap();
+  }
+  function capFor(a) {                                                  // the caption: title, a line about it, and its actions
+    const acts = []; let sub = a.s || '';
+    const A = (ic, label, run, primary, kbd) => acts.push({ ic, label, run, primary, kbd });
+    if (a.kind === 'app') {
+      sub = 'App'; A('open', 'Open', a.run, true, '↵');
+      const e = appInfo(a.app), VI = { 'Run as administrator': 'admin', 'Open file location': 'reveal', 'Pin to Start': 'pinS', 'Unpin from Start': 'pinS' };
+      if (e && e.state === 'ok') {
+        e.data.verbs.forEach(v => A(VI[v] || 'open', v, () => {
+          call('appverb', { k: a.app.k, v });
+          if (/Pin/.test(v)) { net.delete('av:' + a.app.k); setTimeout(() => { if (open && search.value) onQuery(); }, 700); return 'done'; }
+          hide();
+        }, false, v === 'Run as administrator' ? 'Ctrl Shift ↵' : ''));
+        if (e.data.recent[0]) sub = `App  ·  last opened ${e.data.recent[0].n}`;
+      }
+    } else if (a.kind === 'file') {
+      const f = a.f, ext = (f.x || '').slice(1).toUpperCase();
+      sub = [f.dir ? 'Folder' : ext ? `${ext} ${(f.k || 'file').toLowerCase()}` : (f.k || 'File'), !f.dir && f.s ? fmtSize(f.s) : '', f.d ? when(f.d) : '', where_(f.p, f.od)].filter(Boolean).join('  ·  ');
+      A('open', 'Open', a.run, true, '↵'); A('reveal', 'Show in folder', a.alt, false, 'Shift ↵'); A('copy', 'Copy path', () => { copyText(f.p); return 'copied'; });
+    } else if (a.kind === 'set') A('open', a.sys ? 'Open' : 'Open in Settings', a.run, true, '↵');
+    else if (a.kind === 'store') {
+      const x = a.x; sub = [x.pub, +x.rating ? `★ ${(+x.rating).toFixed(1)}` : '', x.cat].filter(Boolean).join('  ·  ');
+      A('store', 'Get', a.run, true, '↵'); A('search', 'Search the web', () => { call('web', { q: x.name }); hide(); });
+    } else if (a.kind === 'web') {
+      sub = 'Search the web'; A('search', 'Google', a.run, true, '↵'); A('yt', 'YouTube', () => { call('web', { q: a.wq, e: 'yt' }); hide(); });
+      A('copy', 'Copy', () => { copyText(a.wq); return 'copied'; });
+    } else {
+      if (a.run) A(a.art ? 'play' : a.key === 'Search' ? 'search' : 'open', a.key || 'Open', a.run, true, '↵');
+      if (a.copy != null) A('copy', 'Copy', () => { copyText(String(a.copy)); return 'copied'; }, !a.run, a.run ? '' : '↵');
+    }
+    return { title: a.t, sub, acts };
+  }
+  function renderCap() {
+    const a = search.value.trim() ? ansList[sel] : null;
+    capEl.classList.toggle('on', !!a);
+    if (!a) { capEl.innerHTML = ''; capEl.dataset.h = ''; capActs = []; return; }
+    const c = capFor(a); capActs = c.acts;
+    const html = `${iconHtml(a.kind === 'app' ? { kind: 'img', src: iconUrl(a.app.k) } : a.icon)}<div class="sxct"><b>${esc(c.title)}</b>${c.sub ? `<span>${esc(c.sub)}</span>` : ''}</div>` +
+      `<div class="sxa" role="toolbar" aria-label="Actions">${c.acts.map((x, i) => { const kb = x.kbd || (i < 9 ? 'Ctrl ' + (i + 1) : '');
+        return `<div class="sxab${x.primary ? ' primary' : ''}" data-i="${i}" role="button" tabindex="-1" aria-keyshortcuts="${esc(kb.replace(/ ↵/, '+Enter').replace(/ /g, '+'))}">${svg(x.ic)}<span>${esc(x.label)}</span>${kb ? `<kbd>${kb}</kbd>` : ''}</div>`; }).join('')}</div>`;
+    if (capEl.dataset.h === html) return;
+    capEl.classList.toggle('still', capEl.dataset.id === a.id);          // the same result, updated: no re-entrance
+    capEl.dataset.h = html; capEl.dataset.id = a.id; capEl.innerHTML = html; markCap();
   }
   function runAns(k, alt) {
     const a = ansList[k]; if (!a) return;
-    if (a.copy != null && (!a.run || alt)) {
-      const txt = String(a.copy); try { navigator.clipboard?.writeText(txt).catch(() => {}); } catch (_) {} call('clip', { text: txt });
-      const row = ansEl.querySelector(`[data-a="${k}"]`); if (row) { row.classList.add('done'); row.querySelector('.ak').textContent = '✓ Copied'; setTimeout(() => row.classList.remove('done'), 900); }
-      return;
+    if (alt && a.alt) { a.alt(); return; }
+    if (a.copy != null && (!a.run || alt)) { copyText(String(a.copy)); flashRow(k, 'Copied'); return; }
+    if (a.run) { const r = a.run(); if (a.stay || r === 'stay') flashRow(k); }
+  }
+  function flashRow(k, msg) {
+    const el = ansRows.querySelector(`[data-a="${k}"]`); el?.classList.add('done'); setTimeout(() => el?.classList.remove('done'), 500);
+    if (msg && k === sel) { const b = capEl.querySelector('.sxab.primary span') || capEl.querySelector('.sxab span'); if (b) { const o = b.textContent; b.textContent = msg; setTimeout(() => { b.textContent = o; }, 900); } }
+  }
+  function runAct(i, el) {
+    const x = capActs[i]; if (!x || !x.run) return;
+    const r = x.run();
+    if (r === 'copied' || r === 'done' || r === 'stay') { el.classList.add('done'); if (r === 'copied') el.querySelector('span').textContent = 'Copied'; setTimeout(() => { el.classList.remove('done'); renderCap(); }, 900); }
+  }
+  function markCap() {
+    capEl.querySelectorAll('.sxab').forEach((b, i) => b.classList.toggle('kf', i === capFocus));
+    capEl.classList.toggle('kfo', capFocus >= 0); ansRows.classList.toggle('capf', capFocus >= 0);
+  }
+  function setSel(k, quiet) {
+    capFocus = -1;
+    const n = ansList.length; if (!n) { sel = 0; renderCap(); return; }
+    userMoved = true;                                                   // you picked this one: a late look-up won't move you off it
+    sel = Math.max(0, Math.min(n - 1, k));
+    ansRows.querySelectorAll('[data-a]').forEach(el => { const on = +el.dataset.a === sel; el.classList.toggle('sel', on); el.setAttribute('aria-selected', on); });
+    if (!quiet) {                                                       // keep it in view (with its row's label, when it starts the row)
+      const el = ansRows.querySelector(`[data-a="${sel}"]`);
+      if (el) {
+        const sec = el.closest('.sxg'), first = sec && sec.querySelector('[data-a]') === el, cr = ansRows.getBoundingClientRect(), r = (first ? sec : el).getBoundingClientRect(), er = el.getBoundingClientRect();
+        if (r.top < cr.top + 4) ansRows.scrollTop -= cr.top + 4 - r.top; else if (er.bottom > cr.bottom - 30) ansRows.scrollTop += er.bottom - cr.bottom + 30;
+      }
     }
-    if (a.run) { const r = a.run(); if (a.stay || r === 'stay') { const row = ansEl.querySelector(`[data-a="${k}"]`); row?.classList.add('done'); setTimeout(() => row?.classList.remove('done'), 300); } }
+    renderCap();
   }
-  // selection runs over the answer rows, then the app tiles
-  function setSel(k) {
-    const tiles = [...track.querySelectorAll('.lpPage.cur .lpi')], n = ansList.length + tiles.length; if (!n) return;
-    sel = (k + n) % n;
-    ansEl.querySelectorAll('.ar').forEach((r, i) => r.classList.toggle('sel', i === sel));
-    track.querySelectorAll('.lpi.sel').forEach(t => t.classList.remove('sel'));
-    if (sel >= ansList.length) tiles[sel - ansList.length]?.classList.add('sel');
+  function moveSel(dir) {                                               // down / up: the nearest result in the next row, under the highlight
+    const cur = ansRows.querySelector(`[data-a="${sel}"]`); if (!cur) return setSel(0);
+    const r0 = cur.getBoundingClientRect(), cx = r0.left + r0.width / 2, cy = r0.top + r0.height / 2;
+    let best = null, bdy = Infinity, bdx = Infinity;
+    for (const el of ansRows.querySelectorAll('[data-a]')) {
+      if (el === cur) continue;
+      const r = el.getBoundingClientRect(), dy = (r.top + r.height / 2 - cy) * dir; if (dy < Math.min(r0.height, r.height) * .45) continue;
+      const dx = Math.abs(r.left + r.width / 2 - cx);
+      if (dy < bdy - 6 || (Math.abs(dy - bdy) <= 6 && dx < bdx)) { best = el; bdy = dy; bdx = dx; }
+    }
+    if (best) setSel(+best.dataset.a);
+    else if (dir > 0 && capActs.length) { capFocus = 0; markCap(); }      // past the last row: into the caption's buttons
+    else if (dir < 0) ansRows.scrollTop = 0;
   }
+  function moveSelH(dir) {                                              // left / right: the neighbour in the same row; at a row's end, on to the next one
+    const cur = ansRows.querySelector(`[data-a="${sel}"]`); if (!cur) return setSel(0);
+    const r0 = cur.getBoundingClientRect(), cy = r0.top + r0.height / 2, cx = r0.left + r0.width / 2;
+    let best = null, bdx = Infinity;
+    for (const el of ansRows.querySelectorAll('[data-a]')) {
+      if (el === cur) continue;
+      const r = el.getBoundingClientRect(); if (Math.abs(r.top + r.height / 2 - cy) > Math.max(r0.height, r.height) * .45) continue;
+      const dx = (r.left + r.width / 2 - cx) * dir; if (dx > 2 && dx < bdx) { best = el; bdx = dx; }
+    }
+    setSel(best ? +best.dataset.a : sel + dir);
+  }
+  function renderFilt() {
+    const on = !!search.value.trim();
+    filtEl.classList.toggle('on', on); if (!on) return;
+    const html = FILTERS.map(([f, label]) => `<span class="fc${f === filt || (f === 'docs' && filt === 'files') ? ' cur' : ''}" data-f="${f}">${label}</span>`).join('');
+    if (filtEl.dataset.h !== html) { filtEl.innerHTML = html; filtEl.dataset.h = html; }
+  }
+  function applyFilter(f) {                                             // a filter or "See all": writes the prefix, like typing "docs:"
+    const rest = splitFilter(search.value).q.trimStart();
+    search.value = f === 'all' ? rest : `${f}: ${rest}`;
+    try { search.setSelectionRange(search.value.length, search.value.length); } catch (_) {}
+    onQuery(); placeCaret();
+  }
+  filtEl.addEventListener('click', e => { const c = e.target.closest('.fc'); if (c) applyFilter(c.dataset.f); });
   function onQuery() {
-    const rawQ = search.value, q = rawQ.trim().toLowerCase();
+    const rawQ = search.value, sf = splitFilter(rawQ), q = sf.q.trim().toLowerCase(); filt = sf.f;
     const was = lp.classList.contains('q') || lp.classList.contains('typing');
-    lp.classList.toggle('q', !!q); if (rawQ) lp.classList.add('typing'); lp.classList.toggle('wide', !!rawQ); if (q) { exitWiggle(); if (folderOpenId) { folderOpenId = null; lp.classList.remove('fopen'); } }
+    lp.classList.toggle('q', !!rawQ.trim()); if (rawQ) lp.classList.add('typing'); lp.classList.toggle('wide', !!rawQ); if (rawQ.trim()) { exitWiggle(); if (folderOpenId) { folderOpenId = null; lp.classList.remove('fopen'); } }
     if (was !== (lp.classList.contains('q') || lp.classList.contains('typing'))) glass?.animate(650);   // capsule is changing width
     placeCaret();
     appHit = !!q && matchApps(q).some(a => a.r <= 1.2 || (a.r <= 3.6 && a.u < 14));     // a clear app match: name starts with it, or a favourite app
-    ansList = q ? answers(rawQ) : [];
-    if (ansList.length === 1 && ansList[0].pr === 0 && matchApps(q).length) ansList = [];       // apps found: no lone web-search card
-    const strong = ansList.length && ansList[0].pr >= 2;
-    lp.classList.toggle('bigAns', !!(ansList[0] && ansList[0].big));
-    page = 0; builtFor = null; build(q, strong ? COLS * 2 : 0);                // with an answer showing, keep two rows of apps
+    if (rawQ !== lastQ) userMoved = false;
+    const fresh = rawQ !== lastQ;
+    const keep = rawQ === lastQ && userMoved ? ansList[sel]?.id : null; lastQ = rawQ;  // the same search, refreshed by a look-up: stay on the result you picked (otherwise the best leads)
+    ansList = rawQ.trim() ? answers(rawQ) : []; if (!rawQ.trim()) { resView = []; hero = null; shownIds = new Set(); }
+    page = 0; builtFor = null; build(q, rawQ.trim() ? -1 : 0);          // while searching, Launchpad itself becomes the results
+    renderFilt();                                                       // (shows the kind understood from "jeet photos" too)
+    const ks = keep ? ansList.findIndex(a => a.id === keep) : -1;
+    sel = ks >= 0 ? ks : 0;
+    if (fresh) ansRows.scrollTop = 0;
     renderAns();
-    // what Enter does: a strong answer, else the best app, else the first answer
-    const tiles = track.querySelectorAll('.lpPage.cur .lpi').length;
-    if (q) setSel(strong || !tiles ? 0 : ansList.length); else track.querySelectorAll('.lpi.sel').forEach(t => t.classList.remove('sel'));
-    clearInterval(liveT); liveT = ansList.some(a => a.live) ? setInterval(() => { if (!open) return clearInterval(liveT); const s0 = sel; ansList = answers(search.value); renderAns(); setSel(s0); }, 1000) : 0;
+    clearInterval(liveT); liveT = ansList.some(a => a.live) ? setInterval(() => {
+      if (!open) return clearInterval(liveT);
+      const id = ansList[sel]?.id; ansList = answers(search.value); const i = ansList.findIndex(a => a.id === id); sel = i >= 0 ? i : 0; renderAns();
+    }, 1000) : 0;
   }
 
   /* ============================================================== input ============================================================== */
@@ -1988,13 +2723,20 @@
   lp.addEventListener('click', e => { const x = e.target.closest('.x'); if (x && wiggle) { e.stopPropagation(); openMenu(x.closest('.lpi')); } });
   $('lpDone').addEventListener('click', () => { gDone?.squish(); setTimeout(exitWiggle, 90); });
   $('lpRestore').addEventListener('click', () => restoreHidden());
-  ansEl.addEventListener('click', e => { const r = e.target.closest('.ar'); if (r) runAns(+r.dataset.a, e.shiftKey); });
-  ansEl.addEventListener('mousemove', e => { const r = e.target.closest('.ar'); if (r && +r.dataset.a !== sel) setSel(+r.dataset.a); });
+  ansEl.addEventListener('click', e => {
+    const see = e.target.closest('.sxg > h6 b'); if (see) { applyFilter(see.dataset.f); return; }
+    if (e.target.closest('.aw')) return;                                // reading an article: clicks in it don't open it
+    const el = e.target.closest('#lpAnsRows [data-a]'); if (!el) return;
+    if (+el.dataset.a !== sel) setSel(+el.dataset.a, true);
+    if (el.classList.contains('lpi')) el.classList.add('press');
+    runAns(+el.dataset.a, e.shiftKey);
+  });
+  capEl.addEventListener('click', e => { const b = e.target.closest('.sxab'); if (b) runAct(+b.dataset.i, b); });
   dots.addEventListener('click', e => { const d = e.target.closest('i'); if (d) goPage(+d.dataset.p); });
   lp.addEventListener('mousedown', e => {        // click on empty space closes; nothing reaches the wallpaper underneath
     e.stopPropagation();
     if (e.target.closest('#lpPwr,#lpPwrMenu')) return;
-    if (e.target.closest('#lpMenu,#lpDlgBox,#lpBar,#lpSizeBar,#lpFPanel,.lpi,#lpSB,#lpDots,#lpAns')) { if (!e.target.closest('#lpMenu,.x')) closeMenu(); return; }
+    if (e.target.closest('#lpMenu,#lpDlgBox,#lpBar,#lpSizeBar,#lpFPanel,.lpi,#lpSB,#lpDots,#lpAns,#lpFilt,#lpCap')) { if (!e.target.closest('#lpMenu,.x')) closeMenu(); return; }
     e.preventDefault();
     if (dlg) closeDlg(false); else if (menuFor) closeMenu(); else if (folderOpenId) closeFolder(); else if (wiggle) exitWiggle(); else if (!window.OVERLAY) hide();   // over your apps: only a click outside Launchpad closes it
   });
@@ -2063,22 +2805,38 @@
       else if (key.length === 1 && !k.ctrlKey) { if (native) return true; insertText(key); }
       return false;
     }
+    if (search.value && k.ctrlKey && !k.shiftKey && /^[1-9]$/.test(key)) { const b = capEl.querySelectorAll('.sxab')[+key - 1]; if (b) runAct(+key - 1, b); return false; }
+    if (search.value && k.ctrlKey && (key === 'ArrowDown' || key === 'ArrowUp')) {
+      const i = FILTERS.findIndex(([f]) => f === filt), n = FILTERS.length; applyFilter(FILTERS[((i < 0 ? 0 : i) + (key === 'ArrowDown' ? 1 : -1) + n) % n][0]); return false;
+    }
     if (k.ctrlKey || k.shiftKey) { if (shortcut(k)) return false; }
+    if (key === 'Escape' && capFocus >= 0) { capFocus = -1; markCap(); return false; }
     if (key === 'Escape') { if (menuFor) closeMenu(); else if (folderOpenId) closeFolder(); else if (wiggle) exitWiggle(); else if (search.value) { search.value = ''; onQuery(); lp.classList.remove('wide'); } else hide(); }
+    else if (search.value && capFocus >= 0 && !k.ctrlKey && !k.shiftKey && /^(ArrowLeft|ArrowRight|ArrowUp|ArrowDown|Enter)$/.test(key)) {   // in the caption's buttons
+      if (key === 'ArrowUp') capFocus = -1;
+      else if (key === 'Enter') { const b = capEl.querySelectorAll('.sxab')[capFocus]; if (b) runAct(capFocus, b); return false; }
+      else if (key !== 'ArrowDown') capFocus = Math.max(0, Math.min(capActs.length - 1, capFocus + (key === 'ArrowRight' ? 1 : -1)));
+      markCap();
+    }
+    else if (search.value && !k.shiftKey && !k.ctrlKey && (key === 'ArrowLeft' || key === 'ArrowRight') && ansList.length) moveSelH(key === 'ArrowRight' ? 1 : -1);   // results: left / right between them
     else if (key === 'Backspace' && search.selectionStart === 0 && search.selectionEnd === 0) glass?.pull(-1);     // nothing left to delete: the bar stretches left, like iOS
     else if (key === 'Delete' && search.selectionStart === search.value.length && search.selectionEnd === search.value.length) glass?.pull(1);
     else if (key === 'ArrowLeft' && search.value && search.selectionStart === 0 && search.selectionEnd === 0 && !k.shiftKey) glass?.pull(-1);
     else if (key === 'ArrowRight' && search.value && search.selectionStart === search.value.length && search.selectionEnd === search.value.length && !k.shiftKey) glass?.pull(1);
+    else if (!search.value && /^Arrow(Left|Right|Up|Down)$/.test(key) && homeKey(key)) {}     // the home grid: move the highlight
     else if ((key === 'ArrowRight' || key === 'ArrowLeft') && !search.value) goPage(page + (key === 'ArrowRight' ? 1 : -1));
     else if (key === 'ArrowLeft' || key === 'ArrowRight') edit((v, a, b) => [v, a === b ? Math.max(0, Math.min(v.length, a + (key === 'ArrowRight' ? 1 : -1))) : key === 'ArrowRight' ? b : a]);
     else if (key === 'Home' || key === 'End') edit(v => [v, key === 'Home' ? 0 : v.length]);
     else if (key === 'PageDown' || key === 'PageUp') { if (!search.value) goPage(page + (key === 'PageDown' ? 1 : -1)); else window.__lpScrollAns?.(key === 'PageDown' ? 1 : -1); }
-    else if (search.value && (key === 'ArrowDown' || (key === 'Tab' && !k.shiftKey))) setSel(sel >= ansList.length && sel + COLS < ansList.length + tiles().length ? sel + COLS : sel + 1);
-    else if (search.value && (key === 'ArrowUp' || (key === 'Tab' && k.shiftKey))) setSel(sel - COLS >= ansList.length ? sel - COLS : sel - 1);
+    else if (search.value && key === 'ArrowDown') moveSel(1);
+    else if (search.value && key === 'ArrowUp') moveSel(-1);
+    else if (search.value && key === 'Tab') setSel(sel + (k.shiftKey ? -1 : 1));
+    else if (key === 'Enter' && k.ctrlKey && k.shiftKey && search.value) {           // like Windows: Ctrl+Shift+Enter runs an app as administrator
+      const a = ansList[sel]; if (a && a.kind === 'app') { call('appverb', { k: a.app.k, v: 'Run as administrator' }); hide(); }
+    }
     else if (key === 'Enter') {
-      if (!search.value) { const t = tiles()[0]; if (t) activate(t); }
-      else if (sel < ansList.length) runAns(sel, k.shiftKey || k.ctrlKey);
-      else { const t = tiles()[sel - ansList.length]; if (t) activate(t); }
+      if (!search.value) { const t = homeSel >= 0 ? homeTiles()[homeSel] : tiles()[0]; if (t) activate(t); }
+      else runAns(sel, k.shiftKey || k.ctrlKey);
     }
     else if (key === 'Backspace' || key === 'Delete') edit((v, a, b) => {
       if (a === b) {
@@ -2093,9 +2851,10 @@
   }
   function onHelperEvent(ev) {
     if (ev.t === 'toggle') toggle();
+    else if (ev.t === 'page') { const mm = window.__musicMode; if (!open && mm && mm.canToggle() && mm.on() !== (ev.to === 'np')) mm.toggle(); }   // scroll / Alt+arrows: Clock <-> Now Playing
     else if (ev.t === 'swipe' && !open && ev.dir === 'right' && window.__musicMode?.canToggle?.()) window.__musicMode.toggle();   // the other way from Launchpad: Now Playing <-> clock
     else if (ev.t === 'swipe') { if (ev.dir === 'left') open ? (search.value ? null : goPage(page + 1)) : show(); else if (open) { page > 0 && !search.value ? goPage(page - 1) : hide(); } }
-    else if (ev.t === 'key') handleKey({ key: VK[ev.vk] || (ev.ch ? String.fromCharCode(ev.ch) : (ev.vk >= 0x41 && ev.vk <= 0x5A ? String.fromCharCode(ev.vk + 32) : '')), ctrlKey: !!ev.ctrl, shiftKey: !!ev.shift });   // Ctrl+letter arrives without a character
+    else if (ev.t === 'key') handleKey({ key: VK[ev.vk] || (ev.ch ? String.fromCharCode(ev.ch) : (ev.vk >= 0x41 && ev.vk <= 0x5A ? String.fromCharCode(ev.vk + 32) : ev.vk >= 0x30 && ev.vk <= 0x39 ? String.fromCharCode(ev.vk) : '')), ctrlKey: !!ev.ctrl, shiftKey: !!ev.shift });   // Ctrl+letter arrives without a character
     else if (ev.t === 'paste') insertText(String(ev.text || '').replace(/[\r\n\t]+/g, ' ').trim());
   }
   let lastKey = '', lastKeyT = 0;

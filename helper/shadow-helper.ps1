@@ -118,6 +118,54 @@ function Media-Art {
         return @{ bytes = $ms.ToArray(); type = $(if ($ras.ContentType) { [string]$ras.ContentType } else { 'image/png' }) }
     } catch { return $null }
 }
+# What YouTube Music is really playing: its page address (watch?v=...) read through Windows' accessibility interface. Works while
+# it is minimized; tells the exact video (or song) id, so the wallpaper never has to search for it.
+$script:ytmDoc = $null; $script:ytmDocAt = [datetime]::MinValue
+function Ytm-Vid {
+    try {
+        if (-not $script:ytmDoc) {
+            if (((Get-Date) - $script:ytmDocAt).TotalSeconds -lt 3) { return '' }
+            $script:ytmDocAt = Get-Date
+            Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
+            $A = [Windows.Automation.AutomationElement]
+            $win = $A::RootElement.FindFirst([Windows.Automation.TreeScope]::Children, (New-Object Windows.Automation.PropertyCondition($A::NameProperty, 'YouTube Music')))
+            if ($win) { $script:ytmDoc = $win.FindFirst([Windows.Automation.TreeScope]::Descendants, (New-Object Windows.Automation.PropertyCondition($A::ControlTypeProperty, [Windows.Automation.ControlType]::Document))) }
+            if (-not $script:ytmDoc) { return '' }
+        }
+        $u = [string]$script:ytmDoc.GetCurrentPropertyValue([Windows.Automation.ValuePattern]::ValueProperty)
+        if ($u -match '[?&]v=([A-Za-z0-9_-]{11})') { return $Matches[1] }
+        if (-not $u) { $script:ytmDoc = $null }
+        return ''
+    } catch { $script:ytmDoc = $null; return '' }
+}
+# YouTube in a browser: Windows only updates its position on play / pause / seek, so ads, pauses and buffering go unseen.
+# The tab's own seek bar (read through the accessibility interface) tells the real second while the window is visible;
+# bat = when it last moved (a minimized window's bar stands still and is then ignored by the wallpaper).
+$script:bSlider = $null; $script:bEdit = $null; $script:bWin = ''; $script:bAt = [datetime]::MinValue; $script:bVal = -1; $script:bChanged = 0L
+function Browser-Pos([string]$title) {
+    try {
+        $key = ($title -replace '[^\w]', '').ToLower(); if (-not $key) { return $null }
+        if (-not $script:bSlider -or $script:bWin -ne $key) {
+            if (((Get-Date) - $script:bAt).TotalSeconds -lt 3 -and $script:bWin -eq $key) { return $null }
+            $script:bAt = Get-Date; $script:bWin = $key; $script:bSlider = $null; $script:bEdit = $null; $script:bVal = -1
+            Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
+            $A = [Windows.Automation.AutomationElement]
+            foreach ($w in $A::RootElement.FindAll([Windows.Automation.TreeScope]::Children, [Windows.Automation.Condition]::TrueCondition)) {
+                $n = (([string]$w.Current.Name) -replace '[^\w]', '').ToLower()
+                if ($n -match 'youtube' -and $n.Contains($key.Substring(0, [Math]::Min(24, $key.Length)))) {
+                    $script:bSlider = $w.FindFirst([Windows.Automation.TreeScope]::Descendants, (New-Object Windows.Automation.PropertyCondition($A::NameProperty, 'Seek slider')))
+                    $script:bEdit = $w.FindFirst([Windows.Automation.TreeScope]::Descendants, (New-Object Windows.Automation.PropertyCondition($A::ControlTypeProperty, [Windows.Automation.ControlType]::Edit)))   # the address bar: the exact video
+                    break
+                }
+            }
+            if (-not $script:bSlider) { return $null }
+        }
+        $vid = ''; if ($script:bEdit) { try { $u = [string]$script:bEdit.GetCurrentPropertyValue([Windows.Automation.ValuePattern]::ValueProperty); if ($u -match 'youtube\.com/watch\?(?:.*&)?v=([A-Za-z0-9_-]{11})') { $vid = $Matches[1] } } catch { $script:bEdit = $null } }
+        $v = [double]$script:bSlider.GetCurrentPropertyValue([Windows.Automation.RangeValuePattern]::ValueProperty)
+        if ($v -ne $script:bVal) { $script:bChanged = $(if ($script:bVal -lt 0) { 0L } else { [DateTimeOffset]::Now.ToUnixTimeMilliseconds() }); $script:bVal = $v }   # (the first reading is not a move)
+        return @{ v = $v; at = $script:bChanged; vid = $vid }
+    } catch { $script:bSlider = $null; return $null }
+}
 function Media-Json {
     if (-not $media) { return '{}' }
     try {
@@ -130,7 +178,9 @@ function Media-Json {
             pos = [math]::Round($tl.Position.TotalSeconds, 3); dur = [math]::Round(($tl.EndTime - $tl.StartTime).TotalSeconds, 3)
             upd = $tl.LastUpdatedTime.ToUnixTimeMilliseconds(); now = [DateTimeOffset]::Now.ToUnixTimeMilliseconds()
             art = $(if ($p.Thumbnail) { '1' } else { '' })
+            vid = $(if ([string]$s.SourceAppUserModelId -match '_crx_cinhi') { Ytm-Vid } else { '' })
         }
+        if ([string]$s.SourceAppUserModelId -match '^(Chrome|MSEdge|Brave|Opera|Firefox)') { $bp = Browser-Pos ([string]$p.Title); if ($bp) { $o.bpos = $bp.v; $o.bat = $bp.at; if ($bp.vid) { $o.vid = $bp.vid } } }
         return ($o | ConvertTo-Json -Compress)
     } catch { return '{}' }
 }
@@ -375,6 +425,32 @@ public static class ShellIcon {
         using (var g = Graphics.FromImage(copy)) g.DrawImage(raw, 0, 0, bm.bmWidth, bm.bmHeight);
         if (bm.bmHeight > 0 && bm.bmBits != IntPtr.Zero && BottomUp) copy.RotateFlip(RotateFlipType.RotateNoneFlipY);
         using (var fixedUp = Enlarge(copy)) (fixedUp ?? copy).Save(outPng, ImageFormat.Png);
+      }
+    } finally { DeleteObject(hbm); }
+  }
+  // A file's picture for Launchpad search: its real thumbnail (photos, videos, PDFs...) or, with iconOnly, the icon Explorer shows.
+  public static void SaveThumb(string path, string outPng, int size, bool iconOnly) {
+    IShellItemImageFactory f;
+    SHCreateItemFromParsingName(path, IntPtr.Zero, typeof(IShellItemImageFactory).GUID, out f);
+    IntPtr hbm; SIZE sz; sz.cx = size; sz.cy = size;
+    int hr = f.GetImage(sz, iconOnly ? (0x1 | 0x4) : 0x1, out hbm);   // BIGGERSIZEOK (| ICONONLY)
+    if (hr != 0) throw new Exception("GetImage " + hr);
+    try {
+      BITMAP bm = new BITMAP(); GetObject(hbm, Marshal.SizeOf(typeof(BITMAP)), ref bm);
+      bool bottomUp = iconOnly || System.IO.Directory.Exists(path);   // icons and folder pictures come bottom-up; real thumbnails (photos, videos) top-down, whatever the header says
+      using (var raw = new Bitmap(bm.bmWidth, bm.bmHeight, bm.bmWidthBytes, PixelFormat.Format32bppPArgb, bm.bmBits))
+      using (var copy = new Bitmap(bm.bmWidth, bm.bmHeight, PixelFormat.Format32bppArgb)) {
+        using (var g = Graphics.FromImage(copy)) g.DrawImage(raw, 0, 0, bm.bmWidth, bm.bmHeight);
+        if (bm.bmBits != IntPtr.Zero && bottomUp) copy.RotateFlip(RotateFlipType.RotateNoneFlipY);
+        bool anyAlpha = false;                                          // thumbnails often come back with alpha 0 everywhere: make them opaque
+        for (int y = 0; y < copy.Height && !anyAlpha; y += Math.Max(1, copy.Height / 16)) for (int x = 0; x < copy.Width; x += Math.Max(1, copy.Width / 16)) if (copy.GetPixel(x, y).A > 0) { anyAlpha = true; break; }
+        if (!anyAlpha) {
+          using (var o = new Bitmap(bm.bmWidth, bm.bmHeight, PixelFormat.Format32bppArgb)) {
+            using (var raw2 = new Bitmap(bm.bmWidth, bm.bmHeight, bm.bmWidthBytes, PixelFormat.Format32bppRgb, bm.bmBits)) using (var g = Graphics.FromImage(o)) g.DrawImage(raw2, 0, 0, bm.bmWidth, bm.bmHeight);
+            if (bottomUp) o.RotateFlip(RotateFlipType.RotateNoneFlipY);
+            o.Save(outPng, ImageFormat.Png);
+          }
+        } else copy.Save(outPng, ImageFormat.Png);
       }
     } finally { DeleteObject(hbm); }
   }
@@ -630,17 +706,23 @@ public class TouchSwipe : NativeWindow {
       // the quality from the player's size). The ready-callback is defined BEFORE YouTube's script loads: from the cache it can run
       // at once, and a callback defined after it is never called (the player then never appears).
       "<script>history.replaceState(null,'',location.pathname);const fit=()=>document.documentElement.style.setProperty('--s',Math.max(innerWidth/1920,innerHeight/1080));fit();addEventListener('resize',fit);" +
-      "let pl,ok=false,ls=0,warm=" + (req.QueryString["w"] == "1" ? "true" : "false") + ";const nocc=()=>{try{pl.setOption('captions','track',{});pl.unloadModule('captions');pl.unloadModule('cc')}catch(_){}};" +
+      "let want=true,pl,ok=false,ls=0,warm=" + (req.QueryString["w"] == "1" ? "true" : "false") + ";const nocc=()=>{try{pl.setOption('captions','track',{});pl.unloadModule('captions');pl.unloadModule('cc')}catch(_){}};" +
       "function init(){if(pl||!window.YT||!YT.Player)return;pl=new YT.Player('p',{videoId:'" + v + "',host:'https://www.youtube-nocookie.com'," +
       "playerVars:{autoplay:1,mute:1,controls:0,disablekb:1,fs:0,iv_load_policy:3,modestbranding:1,playsinline:1,rel:0,cc_load_policy:0,cc_lang_pref:'zz',start:" + ((int)Math.Max(0, s0)).ToString() + "}," +
-      "events:{onReady:e=>{ok=true;e.target.mute();nocc();e.target.playVideo();parent.postMessage({t:'yt',ev:'ready'},'*')},onError:e=>parent.postMessage({t:'yt',ev:'error',code:e.data},'*')," +
-      "onApiChange:nocc,onStateChange:e=>{if(warm&&e.data===1){warm=false;pl.pauseVideo();pl.seekTo(0,true);nocc();return}if(e.data===1){nocc();setTimeout(nocc,1500);setTimeout(nocc,5000)}parent.postMessage({t:'yt',ev:'state',s:e.data},'*')}}})}" +
+      "events:{onReady:e=>{ok=true;e.target.mute();nocc();if(want)e.target.playVideo();else e.target.pauseVideo();parent.postMessage({t:'yt',ev:'ready'},'*')},onError:e=>parent.postMessage({t:'yt',ev:'error',code:e.data},'*')," +
+      "onApiChange:nocc,onStateChange:e=>{if(warm&&e.data===1){warm=false;pl.pauseVideo();pl.seekTo(0,true);nocc();return}if(!want&&(e.data===1||e.data===3))pl.pauseVideo();if(e.data===1){nocc();setTimeout(nocc,1500);setTimeout(nocc,5000)}parent.postMessage({t:'yt',ev:'state',s:e.data},'*')}}})}" +
       "window.onYouTubeIframeAPIReady=init</script><script src='https://www.youtube.com/iframe_api'></script>" +
       "<script>if(window.YT&&YT.loaded)init();setTimeout(init,1500);setTimeout(init,4000);" +
       // kept in step with the real player - but only moved while it actually plays (moving a loading player restarts its loading)
-      "addEventListener('message',e=>{const m=e.data||{};if(ok&&m.cmd==='kick'){pl.seekTo(Math.max(0,(m.pos!=null?m.pos:pl.getCurrentTime())),true);if(m.playing)pl.playVideo();return}if(ok&&m.cmd==='load'&&/^[A-Za-z0-9_-]{6,20}$/.test(m.v)){ls=Date.now();pl.loadVideoById({videoId:m.v,startSeconds:Math.max(0,m.pos||0)});pl.mute();pl.playVideo();return}});" +
-      "addEventListener('message',e=>{const m=e.data||{};if(!ok||m.cmd!=='sync')return;const s=pl.getPlayerState(),d=Math.abs(pl.getCurrentTime()-m.pos),n=Date.now();" +
-      "if(n-ls>4000&&((s===1&&d>.8)||(s===2&&d>2))){ls=n;pl.seekTo(m.pos+(s===1?.25:0),true)}if(m.playing){if(s!==1&&s!==3)pl.playVideo()}else if(s===1)pl.pauseVideo()})</script></body></html>";
+      "addEventListener('message',e=>{const m=e.data||{};if(ok&&m.cmd==='kick'){pl.seekTo(Math.max(0,(m.pos!=null?m.pos:pl.getCurrentTime())),true);if(m.playing)pl.playVideo();return}if(ok&&m.cmd==='load'&&/^[A-Za-z0-9_-]{6,20}$/.test(m.v)){want=true;fresh=1;ls=Date.now();pl.loadVideoById({videoId:m.v,startSeconds:Math.max(0,m.pos||0)});pl.mute();pl.playVideo();return}});" +
+      // in step with the song: the drift is measured on every sync (median of the last 5, so one stale reading never jumps it) and put
+      // right past 0.2 s; each jump lands where the song will be once YouTube has seeked (lag, learned from how the last jump landed)
+      "let ds=[],lag=.3,ck=0,fresh=1;addEventListener('message',e=>{const m=e.data||{};if(m.cmd==='fresh'){fresh=1;return}if(m.cmd==='sync')want=!!m.playing;if(!ok||m.cmd!=='sync')return;const s=pl.getPlayerState(),n=Date.now(),d=pl.getCurrentTime()-m.pos;" +
+      "if(fresh&&s===1&&m.playing){fresh=0;if(Math.abs(d)>.12){ls=n;ds=[];ck=1;pl.seekTo(Math.max(0,m.pos+lag),true)}}" +
+      "if(s===1&&n-ls>1200){ds.push(d);if(ds.length>5)ds.shift()}else if(s!==1)ds=[];const md=ds.length>=3?[...ds].sort((a,b)=>a-b)[ds.length>>1]:0;" +
+      "if(ds.length>=3&&n-(window._dl||0)>3000){window._dl=n;parent.postMessage({t:'yt',ev:'drift',d:+md.toFixed(3),lag:+lag.toFixed(2)},'*')}if(ck&&ds.length>=3){lag=Math.max(0,Math.min(1.2,lag-md*.7));ck=0}" +
+      "if(n-ls>2200&&((s===1&&ds.length>=3&&Math.abs(md)>.2)||(s===2&&Math.abs(d)>.6))){ls=n;ds=[];ck=s===1?1:0;pl.seekTo(Math.max(0,m.pos+(s===1?lag:0)),true)}" +
+      "if(m.playing){if(s!==1&&s!==3)pl.playVideo()}else if(s!==2&&s!==0)pl.pauseVideo()})</script></body></html>";
     var bytes = Encoding.UTF8.GetBytes(html); res.ContentType = "text/html; charset=utf-8"; res.StatusCode = 200; res.OutputStream.Write(bytes, 0, bytes.Length); res.Close();
   }
   static void ServeYtm(System.Net.HttpListenerRequest req, System.Net.HttpListenerResponse res) {
@@ -652,10 +734,11 @@ public class TouchSwipe : NativeWindow {
   static void ServeVCol(System.Net.HttpListenerRequest req, System.Net.HttpListenerResponse res) {
     int x, y, w, h; string json = "{}";
     if (int.TryParse(req.QueryString["x"], out x) && int.TryParse(req.QueryString["y"], out y) && int.TryParse(req.QueryString["w"], out w) && int.TryParse(req.QueryString["h"], out h) && w > 8 && h > 8) {
-      try { json = VCol.Cols(x, y, w, h); } catch (Exception e) { Log("vcol: " + e.Message); }
+      try { json = req.Url.AbsolutePath == "/vedge" ? VCol.Edges(x, y, w, h) : VCol.Cols(x, y, w, h); } catch (Exception e) { Log("vcol: " + e.Message); }
     }
     var bytes = Encoding.UTF8.GetBytes(json); res.ContentType = "application/json"; res.StatusCode = 200; res.OutputStream.Write(bytes, 0, bytes.Length); res.Close();
   }
+  public static Func<System.Net.HttpListenerRequest, System.Net.HttpListenerResponse, bool> Extra;
   static void ServeWait(System.Net.HttpListenerContext ctx, string token) {
     var req = ctx.Request; var res = ctx.Response;
     res.AddHeader("Access-Control-Allow-Origin", "*"); res.AddHeader("Cache-Control", "no-store");
@@ -668,7 +751,8 @@ public class TouchSwipe : NativeWindow {
     if (req.Url.AbsolutePath == "/ytsbimg") { ServeYtSbImg(req, res); return; }
     if (req.Url.AbsolutePath == "/embed") { ServeEmbed(req, res, token); return; }
     if (req.Url.AbsolutePath == "/lpopen") { res.StatusCode = 204; res.Close(); OpenLaunchpad(); return; }
-    if (req.Url.AbsolutePath == "/vcol") { ServeVCol(req, res); return; }   // the video's colours, live, for the stripes' backlight
+    if (req.Url.AbsolutePath == "/vcol" || req.Url.AbsolutePath == "/vedge") { ServeVCol(req, res); return; }   // the video's colours, live, for the stripes' backlight
+    if (Extra != null && Extra(req, res)) return;                                // Launchpad search: files, recent files, web suggestions, Store (class Finder)
     if (req.Url.AbsolutePath != "/wait") { res.StatusCode = 404; res.Close(); return; }
     long since; if (!long.TryParse(req.QueryString["since"], out since)) since = -1;
     Seen();
@@ -737,6 +821,8 @@ public class TouchSwipe : NativeWindow {
         var me = new TouchSwipe();
         hookProc = (code, wp, lp) => {                                   // mouse only: horizontal scroll messages
           if (code >= 0 && (int)wp == 0x020E) me.HWheel((short)((Marshal.ReadInt32(lp, 8) >> 16) & 0xFFFF), "hook");
+          if (code >= 0 && (int)wp == 0x020A) me.VWheel((short)((Marshal.ReadInt32(lp, 8) >> 16) & 0xFFFF), Marshal.ReadInt32(lp, 0), Marshal.ReadInt32(lp, 4));   // scroll on the desktop: Clock <-> Now Playing
+          if (code >= 0 && (int)wp == 0x0201) me.LClick(Marshal.ReadInt32(lp, 0), Marshal.ReadInt32(lp, 4));                                                 // double-click on empty desktop: Launchpad
           return CallNextHookEx(hook, code, wp, lp);
         };
         hook = SetWindowsHookEx(14, hookProc, GetModuleHandle(null), 0);
@@ -748,6 +834,10 @@ public class TouchSwipe : NativeWindow {
           int vk = Marshal.ReadInt32(lp, 0), scan = Marshal.ReadInt32(lp, 4), flags = Marshal.ReadInt32(lp, 8), msg = (int)wp;
           if ((flags & 0x10) != 0) return CallNextHookEx(kbHook, code, wp, lp);                               // injected: leave alone
           bool down = msg == 0x100 || msg == 0x104, up = msg == 0x101 || msg == 0x105;
+          // Alt+Down / Alt+Up on the desktop: Now Playing / the clock (for keyboards without a trackpad's swipe)
+          if (down && !LpOpen && (vk == 0x26 || vk == 0x28) && (AsyncKey(0x12) & 0x8000) != 0 && (AsyncKey(0x11) & 0x8000) == 0 && (AsyncKey(0x5B) & 0x8000) == 0 && DeskState() == 2 && PageAlive()) {
+            Send("{\"t\":\"page\",\"to\":\"" + (vk == 0x28 ? "np" : "clock") + "\"}"); return (IntPtr)1;
+          }
           // The Windows key pressed and released on its own: Launchpad instead of Start. The key itself is never blocked
           // (Win+E, Win+D... all still work); a do-nothing key tapped just before it lifts tells Windows a shortcut was
           // used, so Start stays shut. (Ctrl+Esc still opens Start.)
@@ -904,6 +994,37 @@ public class TouchSwipe : NativeWindow {
     }
   }
   int hAcc; DateTime hAt = DateTime.MinValue, touchAt = DateTime.MinValue;
+  [DllImport("user32.dll", EntryPoint = "GetAsyncKeyState")] static extern short AsyncKey(int vk);
+  [DllImport("user32.dll", EntryPoint = "WindowFromPoint")] static extern IntPtr WinAt(PtX p);
+  [DllImport("user32.dll", EntryPoint = "SendMessageW")] static extern IntPtr SendMsg(IntPtr h, int m, IntPtr w, IntPtr l);
+  [DllImport("user32.dll")] static extern uint GetDoubleClickTime();
+  [DllImport("user32.dll", EntryPoint = "GetAncestor")] static extern IntPtr AncestorOf(IntPtr h, uint f);
+  [StructLayout(LayoutKind.Sequential)] struct PtX { public int x, y; }
+  static bool DeskAt(int x, int y, out IntPtr h) {                     // the empty desktop (or its icon list) is under the pointer
+    h = WinAt(new PtX { x = x, y = y }); string c = h == IntPtr.Zero ? "" : FgClass(h);
+    if (c == "SysListView32" || c == "SHELLDLL_DefView" || c == "WorkerW" || c == "Progman") return true;
+    string rc = h == IntPtr.Zero ? "" : FgClass(AncestorOf(h, 2)); return rc == "WorkerW" || rc == "Progman";   // (icons hidden: the wallpaper window itself, inside the desktop)
+  }
+  DateTime vAt = DateTime.MinValue, vFired = DateTime.MinValue; int vAcc;
+  public void VWheel(int delta, int x, int y) {
+    IntPtr h; if (LpOpen || !DeskAt(x, y, out h)) return;
+    DateTime now = DateTime.Now; if ((now - vAt).TotalMilliseconds > 400) vAcc = 0; vAt = now; vAcc += delta;
+    if (Math.Abs(vAcc) < 120 || (now - vFired).TotalMilliseconds < 650) return;
+    vFired = now; bool np = vAcc < 0; vAcc = 0;                       // down (toward you): Now Playing; up: the clock
+    if (PageAlive()) { Log("scroll " + (np ? "down -> Now Playing" : "up -> clock")); Send("{\"t\":\"page\",\"to\":\"" + (np ? "np" : "clock") + "\"}"); }
+  }
+  DateTime cAt = DateTime.MinValue; int cX, cY;
+  public void LClick(int x, int y) {
+    DateTime now = DateTime.Now; bool dbl = (now - cAt).TotalMilliseconds <= GetDoubleClickTime() && Math.Abs(x - cX) <= 6 && Math.Abs(y - cY) <= 6;
+    cAt = dbl ? DateTime.MinValue : now; cX = x; cY = y;
+    IntPtr h; if (!dbl || LpOpen || !DeskAt(x, y, out h)) return;
+    System.Threading.ThreadPool.QueueUserWorkItem(_ => {
+      System.Threading.Thread.Sleep(60);                               // the desktop has handled the click by now
+      bool onIcon = FgClass(h) == "SysListView32" && SendMsg(h, 0x1032, IntPtr.Zero, IntPtr.Zero) != IntPtr.Zero;   // LVM_GETSELECTEDCOUNT: an icon got picked
+      if (onIcon || LpOpen || !PageAlive()) return;
+      Log("double-click on the empty desktop -> Launchpad"); LpOpen = true; Send("{\"t\":\"toggle\"}");
+    });
+  }
   public void HWheel(int delta, string src) {
     if (seen.Add(src)) Log("first horizontal scroll seen via " + src + " (delta " + delta + ")");
     DateTime now = DateTime.Now;
@@ -931,6 +1052,23 @@ public static class VCol {
   [DllImport("gdi32.dll")] static extern int SetStretchBltMode(IntPtr dc, int m);
   [DllImport("gdi32.dll")] static extern int GetDIBits(IntPtr dc, IntPtr bmp, uint start, uint lines, byte[] bits, ref BMI bi, uint usage);
   [StructLayout(LayoutKind.Sequential)] struct BMI { public int size, w, h; public short planes, bits; public int comp, img, xp, yp, used, imp, c0; }
+  public static string Edges(int x, int y, int w, int h) {
+    const int CW = 24, CH = 14;
+    IntPtr sdc = GetDC(IntPtr.Zero), mdc = CreateCompatibleDC(sdc), bmp = CreateCompatibleBitmap(sdc, CW, CH), old = SelectObject(mdc, bmp);
+    SetStretchBltMode(mdc, 4); StretchBlt(mdc, 0, 0, CW, CH, sdc, x, y, w, h, 0x00CC0020);
+    SelectObject(mdc, old);
+    var bi = new BMI { size = 40, w = CW, h = -CH, planes = 1, bits = 32 }; var px = new byte[CW * CH * 4];
+    GetDIBits(mdc, bmp, 0, CH, px, ref bi, 0);
+    DeleteObject(bmp); DeleteDC(mdc); ReleaseDC(IntPtr.Zero, sdc);
+    Func<int, int, int, int, string> avg = (c0, c1, r0, r1) => { int r = 0, g = 0, b = 0, n = 0; for (int k = r0; k <= r1; k++) for (int c = c0; c <= c1; c++) { int i = (k * CW + c) * 4; b += px[i]; g += px[i + 1]; r += px[i + 2]; n++; } return "[" + (r / n) + "," + (g / n) + "," + (b / n) + "]"; };
+    var sb = new StringBuilder("{\"l\":" + avg(0, 1, 0, CH - 1) + ",\"r\":" + avg(CW - 2, CW - 1, 0, CH - 1) + ",\"t\":[");
+    for (int j = 0; j < 12; j++) { if (j > 0) sb.Append(','); sb.Append(avg(j * 2, j * 2 + 1, 0, 1)); }
+    sb.Append("],\"b\":[");
+    for (int j = 0; j < 12; j++) { if (j > 0) sb.Append(','); sb.Append(avg(j * 2, j * 2 + 1, CH - 2, CH - 1)); }
+    sb.Append("],\"tl\":" + avg(0, 3, 0, 3) + ",\"tr\":" + avg(CW - 4, CW - 1, 0, 3) + ",\"c\":[");   // the top corners; the whole frame in 12 columns
+    for (int j = 0; j < 12; j++) { if (j > 0) sb.Append(','); sb.Append(avg(j * 2, j * 2 + 1, 0, CH - 1)); }
+    return sb.Append("]}").ToString();
+  }
   public static string Cols(int x, int y, int w, int h) {
     const int CW = 12, CH = 6;
     IntPtr sdc = GetDC(IntPtr.Zero), mdc = CreateCompatibleDC(sdc), bmp = CreateCompatibleBitmap(sdc, CW, CH), old = SelectObject(mdc, bmp);
@@ -954,6 +1092,399 @@ if (Test-Path (Join-Path $PSScriptRoot 'winkey.off')) { [TouchSwipe]::WinKey = $
 # Launchpad over your open windows (the Windows key opens it): its own always-ready window, started once
 $overlay = Join-Path $PSScriptRoot 'overlay.ps1'
 if (Test-Path $overlay) { Start-Process powershell.exe -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-STA', '-File', "`"$overlay`"" -WindowStyle Hidden }
+# ---- Launchpad search, like Windows search: your files (Windows' own search index), recent files, web suggestions,
+#      Microsoft Store apps. Read-only look-ups, answered on the fast channel's worker threads (never blocks the keys).
+Add-Type -ReferencedAssemblies System.Data, System.Xml, System.Web.Extensions @'
+using System; using System.Collections.Generic; using System.Data.OleDb; using System.IO; using System.Net; using System.Text; using System.Runtime.InteropServices;
+public static class Finder {
+  const string UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+  static readonly string Home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+  static readonly string OneDrive = Environment.GetEnvironmentVariable("OneDrive") ?? "";
+  static Finder() { ServicePointManager.SecurityProtocol |= SecurityProtocolType.Tls12; }
+  public static string J(string s) {
+    if (s == null) return "null"; var sb = new StringBuilder("\"");
+    foreach (char c in s) { if (c == '"') sb.Append("\\\""); else if (c == '\\') sb.Append("\\\\"); else if (c < 32) sb.AppendFormat("\\u{0:x4}", (int)c); else sb.Append(c); }
+    return sb.Append('"').ToString();
+  }
+  static int Num(string s, int def, int lo, int hi) { int v; if (!int.TryParse(s, out v)) v = def; return Math.Max(lo, Math.Min(hi, v)); }
+  public static bool Serve(HttpListenerRequest req, HttpListenerResponse res) {
+    string p = req.Url.AbsolutePath, json; var q = req.QueryString;
+    try {
+      if (p == "/files") json = Files(q["q"] ?? "", q["kind"] ?? "", Num(q["n"], 8, 1, 30), q["ph"] ?? "");
+      else if (p == "/recent") json = Recent(Num(q["n"], 12, 1, 40), null, null);
+      else if (p == "/suggest") json = Suggest(q["q"] ?? "");
+      else if (p == "/store") json = Store(q["q"] ?? "", Num(q["n"], 4, 1, 12));
+      else if (p == "/thumb") { ServeThumb(q["p"] ?? "", Num(q["s"], 64, 16, 768), q["i"] == "1", res); return true; }
+      else if (p == "/go") {                                         // an app from Launchpad, straight away
+        string id; if (!appIds.TryGetValue(q["k"] ?? "", out id)) { res.StatusCode = 404; res.Close(); return true; }
+        IntPtr w = IntPtr.Zero; try { w = WindowOf(id); } catch { }
+        res.StatusCode = 204; res.AddHeader("X-Shadow", w != IntPtr.Zero ? "switched" : "opened"); res.Close();
+        if (w != IntPtr.Zero) Front(w); else Open("shell:AppsFolder\\" + id); return true;
+      }
+      else if (p == "/goweb") {                                      // a web search, straight away
+        string e = q["e"] ?? "g", u, t = (q["q"] ?? "").Trim(); if (!engines.TryGetValue(e, out u)) engines.TryGetValue("g", out u);
+        if (u == null || t.Length == 0) { res.StatusCode = 404; res.Close(); return true; }
+        res.StatusCode = 204; res.Close(); Open(u + Uri.EscapeDataString(t.Length > 400 ? t.Substring(0, 400) : t)); return true;
+      }
+      else return false;
+    } catch (Exception e) { json = "{\"error\":" + J(e.Message) + "}"; }
+    var b = Encoding.UTF8.GetBytes(json); res.ContentType = "application/json"; res.StatusCode = 200; res.ContentLength64 = b.Length;
+    res.OutputStream.Write(b, 0, b.Length); res.Close(); return true;
+  }
+
+  // ---- opening things: the helper hands over Launchpad's apps (key -> app id) and the search engines; nothing else can be opened ----
+  static volatile Dictionary<string, string> appIds = new Dictionary<string, string>(), engines = new Dictionary<string, string>();
+  static Dictionary<string, string> Map(System.Collections.Hashtable h) { var d = new Dictionary<string, string>(); foreach (System.Collections.DictionaryEntry e in h) d[Convert.ToString(e.Key)] = Convert.ToString(e.Value); return d; }
+  public static void SetApps(System.Collections.Hashtable h) { appIds = Map(h); WarmExes(); }
+  public static void SetEngines(System.Collections.Hashtable h) { engines = Map(h); }
+  static void Open(string target) {
+    try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(target) { UseShellExecute = true }); }
+    catch { try { System.Diagnostics.Process.Start("explorer.exe", "\"" + target + "\""); } catch { } }
+  }
+
+  // ---- an app that's already open: find its window (the way the dock matches them) and bring it forward ----
+  delegate bool EnumProc(IntPtr h, IntPtr l);
+  [DllImport("user32.dll")] static extern bool EnumWindows(EnumProc f, IntPtr l);
+  [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr h);
+  [DllImport("user32.dll")] static extern bool IsIconic(IntPtr h);
+  [DllImport("user32.dll")] static extern IntPtr GetWindow(IntPtr h, uint cmd);
+  [DllImport("user32.dll")] static extern int GetWindowLong(IntPtr h, int i);
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowTextLength(IntPtr h);
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClassName(IntPtr h, StringBuilder s, int n);
+  [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
+  [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
+  [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr h);
+  [DllImport("user32.dll")] static extern bool BringWindowToTop(IntPtr h);
+  [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr h, int cmd);
+  [DllImport("user32.dll")] static extern bool AttachThreadInput(uint a, uint b, bool attach);
+  [DllImport("user32.dll")] static extern void SwitchToThisWindow(IntPtr h, bool alt);
+  [DllImport("kernel32.dll")] static extern uint GetCurrentThreadId();
+  [DllImport("dwmapi.dll")] static extern int DwmGetWindowAttribute(IntPtr h, int a, out int v, int size);
+  [DllImport("kernel32.dll")] static extern IntPtr OpenProcess(uint access, bool inherit, uint pid);
+  [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr h);
+  [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] static extern bool QueryFullProcessImageName(IntPtr h, int flags, StringBuilder s, ref int n);
+  [DllImport("shell32.dll")] static extern int SHGetPropertyStoreForWindow(IntPtr h, ref Guid iid, [MarshalAs(UnmanagedType.Interface)] out IPropertyStore ps);
+  [DllImport("shell32.dll", CharSet = CharSet.Unicode)] static extern int SHGetKnownFolderPath([MarshalAs(UnmanagedType.LPStruct)] Guid id, uint flags, IntPtr token, out IntPtr path);
+  [DllImport("ole32.dll")] static extern int PropVariantClear(ref PROPVARIANT p);
+  [StructLayout(LayoutKind.Sequential)] struct PROPERTYKEY { public Guid fmtid; public uint pid; }
+  [StructLayout(LayoutKind.Sequential)] struct PROPVARIANT { public ushort vt, r1, r2, r3; public IntPtr p, p2; }
+  [ComImport, Guid("886D8EEB-8CF2-4446-8D02-CDBA1DBDCF99"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+  interface IPropertyStore { int GetCount(out uint c); int GetAt(uint i, out PROPERTYKEY k); int GetValue(ref PROPERTYKEY k, out PROPVARIANT v); int SetValue(ref PROPERTYKEY k, ref PROPVARIANT v); int Commit(); }
+
+  // each app's program (app id -> exe), worked out once in the background so a switch never waits for it
+  static volatile Dictionary<string, string> exeOfId = new Dictionary<string, string>();
+  static volatile Dictionary<string, int> idsOfExe = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+  static int warmGen;
+  static void WarmExes() {
+    int gen = System.Threading.Interlocked.Increment(ref warmGen); var ids = new List<string>(appIds.Values);
+    var t = new System.Threading.Thread(() => {
+      var map = new Dictionary<string, string>(); var count = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+      object ns = null;
+      try { var sh = Activator.CreateInstance(Type.GetTypeFromProgID("Shell.Application")); ns = sh.GetType().InvokeMember("Namespace", System.Reflection.BindingFlags.InvokeMethod, null, sh, new object[] { "shell:AppsFolder" }); } catch { }
+      foreach (var id in ids) {
+        if (gen != warmGen) return;
+        string exe = ResolveKnown(id);
+        if (exe == null && ns != null && !id.Contains("!")) {
+          try { var it = ns.GetType().InvokeMember("ParseName", System.Reflection.BindingFlags.InvokeMethod, null, ns, new object[] { id });
+                if (it != null) exe = it.GetType().InvokeMember("Path", System.Reflection.BindingFlags.GetProperty, null, it, null) as string; } catch { }
+        }
+        if (exe != null && exe.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) && File.Exists(exe)) { map[id] = exe; int c; count.TryGetValue(exe, out c); count[exe] = c + 1; }
+      }
+      exeOfId = map; idsOfExe = count;
+    });
+    t.IsBackground = true; t.SetApartmentState(System.Threading.ApartmentState.STA); t.Start();
+  }
+  static string ResolveKnown(string id) {                               // "{6D809377-...}\App\app.exe" -> "C:\Program Files\App\app.exe"
+    var m = System.Text.RegularExpressions.Regex.Match(id, @"^\{([0-9A-Fa-f\-]{36})\}\\(.*)$");
+    if (!m.Success) return id.Contains(":\\") ? id : null;
+    IntPtr p; if (SHGetKnownFolderPath(new Guid(m.Groups[1].Value), 0, IntPtr.Zero, out p) != 0) return null;
+    string root = Marshal.PtrToStringUni(p); Marshal.FreeCoTaskMem(p); return Path.Combine(root, m.Groups[2].Value);
+  }
+  static string ExeOf(uint pid) {
+    IntPtr ph = OpenProcess(0x1000, false, pid); if (ph == IntPtr.Zero) return null;
+    try { var sb = new StringBuilder(1024); int n = 1024; return QueryFullProcessImageName(ph, 0, sb, ref n) ? sb.ToString() : null; } finally { CloseHandle(ph); }
+  }
+  static string Aumid(IntPtr h) {
+    var iid = new Guid("886D8EEB-8CF2-4446-8D02-CDBA1DBDCF99"); IPropertyStore ps;
+    if (SHGetPropertyStoreForWindow(h, ref iid, out ps) != 0 || ps == null) return null;
+    try {
+      var k = new PROPERTYKEY { fmtid = new Guid("9F4C2855-9F79-4B39-A8D0-E1D42DE1D5F3"), pid = 5 }; PROPVARIANT v;
+      if (ps.GetValue(ref k, out v) != 0) return null;
+      string s = v.vt == 31 ? Marshal.PtrToStringUni(v.p) : null; PropVariantClear(ref v); return s;
+    } catch { return null; } finally { Marshal.ReleaseComObject(ps); }
+  }
+  // the app's front-most window (windows come top to bottom), or none
+  static IntPtr WindowOf(string id) {
+    string exe; exeOfId.TryGetValue(id, out exe); if (exe == null) exe = ResolveKnown(id);
+    int shared; bool exeOk = exe != null && (!idsOfExe.TryGetValue(exe, out shared) || shared <= 1);   // a program several apps share (a browser's web apps) can't say which
+    string fam = id.Contains("!") ? id.Split('!')[0] : null;
+    var known = new HashSet<string>(appIds.Values, StringComparer.OrdinalIgnoreCase);
+    uint me = (uint)System.Diagnostics.Process.GetCurrentProcess().Id; IntPtr found = IntPtr.Zero;
+    EnumWindows((h, l) => {
+      if (!IsWindowVisible(h) || GetWindow(h, 4) != IntPtr.Zero) return true;                    // visible, not owned by another window
+      int ex = GetWindowLong(h, -20); if ((ex & 0x80) != 0 && (ex & 0x40000) == 0) return true;   // tool windows
+      int cloaked; if (DwmGetWindowAttribute(h, 14, out cloaked, 4) == 0 && cloaked != 0) return true;   // on another desktop / suspended
+      if (GetWindowTextLength(h) == 0) return true;
+      var c = new StringBuilder(128); GetClassName(h, c, 128); string cls = c.ToString();
+      if (cls == "Progman" || cls == "WorkerW" || cls == "Shell_TrayWnd" || cls == "Shell_SecondaryTrayWnd" || cls == "Windows.UI.Core.CoreWindow") return true;
+      uint pid; GetWindowThreadProcessId(h, out pid); if (pid == me) return true;
+      string au = Aumid(h);
+      if (au != null) {                                                                           // its app id, or one of an app's (Chrome.UserData.Profile1 is Chrome's)
+        string best = null; foreach (var k in known) if ((best == null || k.Length > best.Length) && (au.Equals(k, StringComparison.OrdinalIgnoreCase) || au.StartsWith(k + ".", StringComparison.OrdinalIgnoreCase))) best = k;
+        if (best != null) { if (string.Equals(best, id, StringComparison.OrdinalIgnoreCase)) { found = h; return false; } return true; }   // this app's, or another app's
+      }
+      string we = ExeOf(pid); if (we == null || we.EndsWith("\\Lively.exe", StringComparison.OrdinalIgnoreCase)) return true;
+      if (exeOk && !we.EndsWith("ApplicationFrameHost.exe", StringComparison.OrdinalIgnoreCase) && string.Equals(we, exe, StringComparison.OrdinalIgnoreCase)) { found = h; return false; }
+      if (fam != null) {                                                                          // a Store app: WindowsApps\Name_1.2.3.0_x64__publisher\...
+        var m = System.Text.RegularExpressions.Regex.Match(we, @"\\WindowsApps\\([^\\_]+)_[^\\]*_([a-z0-9]{13})\\", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        if (m.Success && string.Equals(m.Groups[1].Value + "_" + m.Groups[2].Value, fam, StringComparison.OrdinalIgnoreCase)) { found = h; return false; }
+      }
+      return true;
+    }, IntPtr.Zero);
+    return found;
+  }
+  static void Front(IntPtr w) {
+    if (IsIconic(w)) ShowWindow(w, 9);                                                            // minimised: put it back where it was
+    IntPtr fg = GetForegroundWindow(); uint pid, me = GetCurrentThreadId(), other = fg == IntPtr.Zero ? 0 : GetWindowThreadProcessId(fg, out pid);
+    bool att = other != 0 && other != me && AttachThreadInput(me, other, true);
+    BringWindowToTop(w); SetForegroundWindow(w);
+    if (att) AttachThreadInput(me, other, false);
+    if (GetForegroundWindow() != w) SwitchToThisWindow(w, true);                                  // Windows refused: ask the way Alt+Tab does
+  }
+
+  // ---- a file's thumbnail or icon, as Explorer draws it (made once, then kept in launcher\thumbs) ----
+  public static string ThumbDir;
+  static readonly object thumbLock = new object();
+  static void ServeThumb(string path, int size, bool iconOnly, HttpListenerResponse res) {
+    byte[] png = null;
+    try {
+      bool isDir = Directory.Exists(path);
+      if (path.Length > 0 && path.Length < 1000 && Path.IsPathRooted(path) && (isDir || File.Exists(path))) {
+        DateTime m = isDir ? Directory.GetLastWriteTimeUtc(path) : File.GetLastWriteTimeUtc(path);
+        string key; using (var md5 = System.Security.Cryptography.MD5.Create()) key = BitConverter.ToString(md5.ComputeHash(Encoding.UTF8.GetBytes(path.ToLowerInvariant() + "|" + m.Ticks + "|" + size + "|" + iconOnly))).Replace("-", "");
+        string dir = ThumbDir ?? Path.Combine(Path.GetTempPath(), "ShadowThumbs"); Directory.CreateDirectory(dir);
+        string file = Path.Combine(dir, key + ".png");
+        if (!File.Exists(file)) {
+          Exception err = null;
+          var t = new System.Threading.Thread(() => {                    // shell thumbnail makers want a single-threaded apartment
+            try {
+              Type si = null; foreach (var a in AppDomain.CurrentDomain.GetAssemblies()) { si = a.GetType("ShellIcon"); if (si != null) break; }
+              string tmp = file + "." + System.Threading.Thread.CurrentThread.ManagedThreadId + ".tmp";
+              si.GetMethod("SaveThumb").Invoke(null, new object[] { path, tmp, size, iconOnly });
+              lock (thumbLock) { if (!File.Exists(file)) File.Move(tmp, file); else File.Delete(tmp); }
+            } catch (Exception e) { err = e; }
+          });
+          t.SetApartmentState(System.Threading.ApartmentState.STA); t.IsBackground = true; t.Start();
+          if (!t.Join(6000) || err != null) throw err ?? new Exception("timeout");
+        }
+        png = File.ReadAllBytes(file);
+      }
+    } catch { png = null; }
+    if (png == null) { res.StatusCode = 404; res.Close(); return; }
+    res.ContentType = "image/png"; res.Headers["Cache-Control"] = "max-age=86400"; res.StatusCode = 200; res.ContentLength64 = png.Length;
+    res.OutputStream.Write(png, 0, png.Length); res.Close();
+  }
+
+  // ---- files: names first (every word must appear), then text inside documents; your own folders, newest first ----
+  static string Like(string w) { var sb = new StringBuilder(); foreach (char c in w) if (c != '\'' && c != '%' && c != '_' && c != '[' && c != ']' && c != '"') sb.Append(c); return sb.ToString(); }
+  static readonly Dictionary<string, string> Kinds = new Dictionary<string, string> {
+    { "docs", "System.Kind = 'document'" }, { "photos", "System.Kind = 'picture'" }, { "music", "System.Kind = 'music'" },
+    { "videos", "System.Kind = 'video'" }, { "folders", "System.Kind = 'folder'" } };
+  static readonly Dictionary<string, KeyValuePair<DateTime, string>> filesCache = new Dictionary<string, KeyValuePair<DateTime, string>>();
+  // ph = "n": the quick pass - names, through the index (words that start with what you typed); ph = "c": the slower pass - names that
+  // merely contain it, and documents whose text mentions it; no ph: both
+  public static string Files(string q, string kind, int n, string ph) {
+    string ck = q.Trim().ToLowerInvariant() + "|" + kind + "|" + n + "|" + ph; KeyValuePair<DateTime, string> hit;
+    lock (filesCache) { if (filesCache.TryGetValue(ck, out hit) && (DateTime.UtcNow - hit.Key).TotalSeconds < 30) return hit.Value; }
+    string json = FilesNow(q, kind, n, ph);
+    lock (filesCache) { if (filesCache.Count > 300) filesCache.Clear(); filesCache[ck] = new KeyValuePair<DateTime, string>(DateTime.UtcNow, json); }
+    return json;
+  }
+  static string FilesNow(string q, string kind, int n, string ph) {
+    var words = new List<string>(); foreach (var w in q.Trim().Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries)) { var e = Like(w); if (e.Length > 0) words.Add(e); }
+    if (words.Count == 0 || q.Trim().Length < 2) return "[]";
+    string where = "SCOPE='file:" + Home.Replace('\\', '/') + "' AND System.ItemPathDisplay NOT LIKE '%\\AppData\\%' AND System.ItemPathDisplay NOT LIKE '%\\.%'" +
+      " AND System.ItemPathDisplay NOT LIKE '%\\node_modules\\%' AND System.ItemPathDisplay NOT LIKE '%\\site-packages\\%'" +
+      " AND System.ItemPathDisplay NOT LIKE '%\\intermediates\\%' AND System.ItemPathDisplay NOT LIKE '%\\__pycache__\\%' AND System.ItemPathDisplay NOT LIKE '%\\venv\\%'" +
+      " AND System.ItemPathDisplay NOT LIKE '%\\CrossDevice\\%'";   // tool clutter and the phone's mirrored storage, not your files
+    string k; if (Kinds.TryGetValue(kind, out k)) where += " AND " + k;
+    var nameW = new StringBuilder(); foreach (var w in words) nameW.Append(" AND System.ItemNameDisplay LIKE '%" + w + "%'");
+    var fastW = new StringBuilder(" AND CONTAINS(System.ItemNameDisplay, '"); for (int wi = 0; wi < words.Count; wi++) fastW.Append((wi > 0 ? " AND " : "") + "\"" + words[wi] + "*\""); fastW.Append("')");
+    const string cols = "SELECT TOP 60 System.ItemNameDisplay, System.ItemPathDisplay, System.KindText, System.DateModified, System.Size, System.ItemType FROM SystemIndex WHERE ";
+    var found = new List<object[]>(); var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    using (var c = new OleDbConnection("Provider=Search.CollatorDSO;Extended Properties=\"Application=Windows\";")) {
+      c.Open();
+      if (ph != "c") try { Read(c, cols + where + fastW + " ORDER BY System.DateModified DESC", found, seen, false); } catch { }     // quick: ~0.1 s
+      if (ph != "n") Read(c, cols + where + nameW + " ORDER BY System.DateModified DESC", found, seen, false);                    // names containing it anywhere: ~0.5 s
+      if (ph != "n" && found.Count < n && q.Trim().Length >= 3 && (kind == "" || kind == "docs")) {   // then documents that mention it
+        var cw = new StringBuilder(); foreach (var w in words) cw.Append(" AND CONTAINS(System.Search.Contents, '\"" + w + "*\"')");
+        try { Read(c, "SELECT TOP " + (n * 2) + " System.ItemNameDisplay, System.ItemPathDisplay, System.KindText, System.DateModified, System.Size, System.ItemType FROM SystemIndex WHERE " + where + cw + " ORDER BY System.DateModified DESC", found, seen, true); } catch { }
+      }
+    }
+    string ql = q.Trim().ToLowerInvariant();
+    found.Sort((a, b) => {                                                                // name starts with it > a word starts with it > anywhere; then newest
+      int sa = Score((string)a[0], ql, (bool)a[6]), sb = Score((string)b[0], ql, (bool)b[6]);
+      return sa != sb ? sb.CompareTo(sa) : ((DateTime)b[3]).CompareTo((DateTime)a[3]);
+    });
+    var o = new StringBuilder("["); int i = 0;
+    foreach (var r in found) { if (i++ >= n) break; if (i > 1) o.Append(','); o.Append(Item(r)); }
+    return o.Append(']').ToString();
+  }
+  static int Score(string name, string q, bool content) {
+    if (content) return 0; string n = name.ToLowerInvariant();
+    if (n.StartsWith(q)) return 3; if (n.Contains(" " + q) || n.Contains("_" + q) || n.Contains("-" + q)) return 2; return 1;
+  }
+  static void Read(OleDbConnection c, string sql, List<object[]> found, HashSet<string> seen, bool content) {
+    using (var cmd = new OleDbCommand(sql, c)) using (var r = cmd.ExecuteReader()) {
+      while (r.Read()) {
+        string path = r.IsDBNull(1) ? null : r.GetValue(1).ToString(); if (path == null || !seen.Add(path)) continue;
+        string kind = r.IsDBNull(2) ? "" : r.GetValue(2).ToString();
+        DateTime d = r.IsDBNull(3) ? DateTime.MinValue : Convert.ToDateTime(r.GetValue(3));
+        long size = r.IsDBNull(4) ? 0 : Convert.ToInt64(r.GetValue(4));
+        string type = r.IsDBNull(5) ? "" : r.GetValue(5).ToString();
+        found.Add(new object[] { r.IsDBNull(0) ? Path.GetFileName(path) : r.GetValue(0).ToString(), path, kind, d, size, type, content });
+      }
+    }
+  }
+  static string Item(object[] r) {
+    string path = (string)r[1], type = (string)r[5]; bool dir = type == "Directory" || type == "File folder" || Directory.Exists(path);
+    return "{\"n\":" + J((string)r[0]) + ",\"p\":" + J(path) + ",\"k\":" + J((string)r[2]) + ",\"x\":" + J(dir ? "" : Path.GetExtension(path).ToLowerInvariant()) +
+      ",\"d\":" + J(((DateTime)r[3]) == DateTime.MinValue ? "" : ((DateTime)r[3]).ToString("o")) + ",\"s\":" + (long)r[4] + ",\"dir\":" + (dir ? "true" : "false") +
+      ",\"od\":" + (OneDrive.Length > 0 && path.StartsWith(OneDrive, StringComparison.OrdinalIgnoreCase) ? "true" : "false") + ",\"c\":" + ((bool)r[6] ? "true" : "false") + "}";
+  }
+
+  // ---- recent files (the shortcuts Windows keeps in Recent), optionally only those an app opens ----
+  public static void Warm() { System.Threading.Tasks.Task.Run(() => { try { FilesNow("readme", "", 1, ""); } catch { } try { RecentList(); } catch { } }); }
+  static List<KeyValuePair<string, DateTime>> recent; static DateTime recentAt;
+  static readonly object recentLock = new object();
+  static List<KeyValuePair<string, DateTime>> RecentList() {
+    lock (recentLock) {
+      if (recent != null && (DateTime.UtcNow - recentAt).TotalSeconds < 20) return recent;
+      var list = new List<KeyValuePair<string, DateTime>>(); var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+      var files = new DirectoryInfo(Environment.GetFolderPath(Environment.SpecialFolder.Recent)).GetFiles("*.lnk");
+      Array.Sort(files, (a, b) => b.LastWriteTimeUtc.CompareTo(a.LastWriteTimeUtc));
+      var t = Type.GetTypeFromProgID("WScript.Shell"); object sh = Activator.CreateInstance(t);
+      try {
+        int k = 0;
+        foreach (var f in files) {
+          if (k++ > 150) break;
+          try {
+            object sc = t.InvokeMember("CreateShortcut", System.Reflection.BindingFlags.InvokeMethod, null, sh, new object[] { f.FullName });
+            string tp = (string)sc.GetType().InvokeMember("TargetPath", System.Reflection.BindingFlags.GetProperty, null, sc, null);
+            Marshal.ReleaseComObject(sc);
+            if (string.IsNullOrEmpty(tp) || !seen.Add(tp)) continue;
+            if (tp.IndexOf("\\AppData\\", StringComparison.OrdinalIgnoreCase) >= 0) continue;
+            if (!File.Exists(tp) && !Directory.Exists(tp)) continue;
+            list.Add(new KeyValuePair<string, DateTime>(tp, f.LastWriteTime));
+          } catch { }
+        }
+      } finally { Marshal.ReleaseComObject(sh); }
+      recent = list; recentAt = DateTime.UtcNow; return list;
+    }
+  }
+  [DllImport("shlwapi.dll", CharSet = CharSet.Unicode)] static extern int AssocQueryString(int flags, int str, string assoc, string extra, StringBuilder outp, ref int len);
+  static string Assoc(string ext, int what) { int n = 1024; var sb = new StringBuilder(n); return AssocQueryString(0, what, ext, null, sb, ref n) == 0 ? sb.ToString() : ""; }
+  public static string Recent(int n, string appId, string exe) {                           // appId / exe: only files that open in that app
+    var o = new StringBuilder("["); int i = 0; var memo = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+    foreach (var kv in RecentList()) {
+      string path = kv.Key; bool dir = Directory.Exists(path);
+      if (!string.IsNullOrEmpty(appId) || !string.IsNullOrEmpty(exe)) {
+        if (dir) continue; string ext = Path.GetExtension(path); if (ext.Length == 0) continue; bool ok;
+        if (!memo.TryGetValue(ext, out ok)) {
+          string handler = Assoc(ext, 2).Trim('"');                                       // 2 = the program that opens it, 21 = its app ID (Store apps)
+          ok = (!string.IsNullOrEmpty(exe) && handler.Length > 0 && string.Equals(handler, exe, StringComparison.OrdinalIgnoreCase))
+            || (!string.IsNullOrEmpty(appId) && string.Equals(Assoc(ext, 21), appId, StringComparison.OrdinalIgnoreCase));
+          memo[ext] = ok;
+        }
+        if (!ok) continue;
+      }
+      if (i++ >= n) break; if (i > 1) o.Append(',');
+      long size = 0; try { if (!dir) size = new FileInfo(path).Length; } catch { }
+      o.Append("{\"n\":" + J(Path.GetFileName(path.TrimEnd('\\')) == "" ? path : Path.GetFileName(path.TrimEnd('\\'))) + ",\"p\":" + J(path) + ",\"k\":" + J(dir ? "Folder" : "") +
+        ",\"x\":" + J(dir ? "" : Path.GetExtension(path).ToLowerInvariant()) + ",\"d\":" + J(kv.Value.ToString("o")) + ",\"s\":" + size + ",\"dir\":" + (dir ? "true" : "false") +
+        ",\"od\":" + (OneDrive.Length > 0 && path.StartsWith(OneDrive, StringComparison.OrdinalIgnoreCase) ? "true" : "false") + ",\"c\":false}");
+    }
+    return o.Append(']').ToString();
+  }
+
+  // ---- the web: Google's suggestions + DuckDuckGo's instant answer, passed through as they come ----
+  static string Get(string url) {
+    var r = (HttpWebRequest)WebRequest.Create(url); r.UserAgent = UA; r.Timeout = 5000; r.ReadWriteTimeout = 5000;
+    using (var resp = r.GetResponse()) using (var s = new StreamReader(resp.GetResponseStream(), Encoding.UTF8)) return s.ReadToEnd();
+  }
+  static string JsonOrNull(string s) { s = (s ?? "").Trim(); return s.StartsWith("[") || s.StartsWith("{") ? s : "null"; }
+  public static string Suggest(string q) {
+    q = q.Trim(); if (q.Length == 0 || q.Length > 200) return "{\"g\":null,\"d\":null}";
+    string e = Uri.EscapeDataString(q), g = "null", d = "null";
+    var tg = System.Threading.Tasks.Task.Run(() => { try { return JsonOrNull(Get("https://suggestqueries.google.com/complete/search?client=firefox&ie=utf8&oe=utf8&q=" + e)); } catch { return "null"; } });
+    var td = System.Threading.Tasks.Task.Run(() => { try { return JsonOrNull(Get("https://api.duckduckgo.com/?format=json&no_html=1&skip_disambig=1&no_redirect=1&q=" + e)); } catch { return "null"; } });
+    g = tg.Result; d = td.Result;
+    return "{\"g\":" + g + ",\"d\":" + d + "}";
+  }
+
+  // ---- Microsoft Store: the same catalogue search winget uses (msstore source) ----
+  public static string Store(string q, int n) {
+    q = q.Trim(); if (q.Length < 2 || q.Length > 100) return "[]";
+    string market = "US"; try { market = System.Globalization.RegionInfo.CurrentRegion.TwoLetterISORegionName; } catch { }
+    try { var geo = Microsoft.Win32.Registry.GetValue(@"HKEY_CURRENT_USER\Control Panel\International\Geo", "Name", null) as string; if (!string.IsNullOrEmpty(geo) && geo.Length == 2) market = geo; } catch { }   // Settings > Country or region: the Store's own market
+    string body = "{\"MaximumResults\":" + n + ",\"Filters\":[{\"PackageMatchField\":\"Market\",\"RequestMatch\":{\"KeyWord\":" + J(market) + ",\"MatchType\":\"CaseInsensitive\"}}],\"Query\":{\"KeyWord\":" + J(q) + ",\"MatchType\":\"Substring\"}}";
+    var r = (HttpWebRequest)WebRequest.Create("https://storeedgefd.dsx.mp.microsoft.com/v9.0/manifestSearch"); r.Method = "POST"; r.ContentType = "application/json"; r.UserAgent = UA; r.Timeout = 8000;
+    var b = Encoding.UTF8.GetBytes(body); using (var s = r.GetRequestStream()) s.Write(b, 0, b.Length);
+    var js = new System.Web.Script.Serialization.JavaScriptSerializer { MaxJsonLength = 1 << 24 };
+    var ids = new List<string>(); var names = new Dictionary<string, string[]>();
+    using (var resp = r.GetResponse()) using (var s = new StreamReader(resp.GetResponseStream(), Encoding.UTF8)) {
+      var root = js.Deserialize<Dictionary<string, object>>(s.ReadToEnd()); object data;
+      if (root != null && root.TryGetValue("Data", out data) && data is System.Collections.IList)
+        foreach (Dictionary<string, object> d in (System.Collections.IList)data) {
+          string id = Str(d, "PackageIdentifier"); if (id.Length == 0 || ids.Contains(id)) continue;
+          ids.Add(id); names[id] = new[] { Str(d, "PackageName"), Str(d, "Publisher") };
+        }
+    }
+    if (ids.Count == 0) return "[]";
+    // the Store's catalogue: logo, description and rating for each
+    var info = new Dictionary<string, string[]>();
+    try {
+      string cat = Get("https://displaycatalog.mp.microsoft.com/v7.0/products?bigIds=" + string.Join(",", ids) + "&market=" + market + "&languages=en-US");
+      var root = js.Deserialize<Dictionary<string, object>>(cat); object prods;
+      if (root != null && root.TryGetValue("Products", out prods) && prods is System.Collections.IList)
+        foreach (Dictionary<string, object> pr in (System.Collections.IList)prods) {
+          string id = Str(pr, "ProductId"), logo = "", desc = "", rating = "", count = "", cat2 = "";
+          var lps = pr.ContainsKey("LocalizedProperties") ? pr["LocalizedProperties"] as System.Collections.IList : null;
+          if (lps != null && lps.Count > 0) {
+            var lp = (Dictionary<string, object>)lps[0];
+            desc = Str(lp, "ShortDescription"); if (desc.Length == 0) desc = Str(lp, "ProductDescription");
+            if (desc.Length > 420) desc = desc.Substring(0, 420).TrimEnd() + "…";
+            int best = 0; var imgs = lp.ContainsKey("Images") ? lp["Images"] as System.Collections.IList : null;
+            if (imgs != null) foreach (Dictionary<string, object> im in imgs) {
+              string purpose = Str(im, "ImagePurpose"); int w = 0; int.TryParse(Str(im, "Width"), out w);
+              if ((purpose == "Logo" || purpose == "Tile") && w > best && w <= 300) { best = w; logo = Str(im, "Uri"); }
+            }
+            if (logo.StartsWith("//")) logo = "https:" + logo;
+          }
+          var mps = pr.ContainsKey("MarketProperties") ? pr["MarketProperties"] as System.Collections.IList : null;
+          if (mps != null && mps.Count > 0) {
+            var usage = ((Dictionary<string, object>)mps[0]).ContainsKey("UsageData") ? ((Dictionary<string, object>)mps[0])["UsageData"] as System.Collections.IList : null;
+            if (usage != null) foreach (Dictionary<string, object> u in usage) if (Str(u, "AggregateTimeSpan") == "AllTime" || rating.Length == 0) { rating = Str(u, "AverageRating"); count = Str(u, "RatingCount"); }
+          }
+          var props = pr.ContainsKey("Properties") ? pr["Properties"] as Dictionary<string, object> : null;
+          if (props != null) cat2 = Str(props, "Category");
+          info[id] = new[] { logo, desc, rating, count, cat2 };
+        }
+    } catch { }
+    var o = new StringBuilder("["); bool first = true;
+    foreach (var id in ids) {
+      string[] nm = names[id], inf; info.TryGetValue(id, out inf); inf = inf ?? new[] { "", "", "", "", "" };
+      if (!first) o.Append(','); first = false;
+      o.Append("{\"id\":" + J(id) + ",\"name\":" + J(nm[0]) + ",\"pub\":" + J(nm[1]) + ",\"logo\":" + J(inf[0]) + ",\"desc\":" + J(inf[1]) + ",\"rating\":" + J(inf[2]) + ",\"count\":" + J(inf[3]) + ",\"cat\":" + J(inf[4]) + "}");
+    }
+    return o.Append(']').ToString();
+  }
+  static string Str(Dictionary<string, object> d, string k) { object v; return d != null && d.TryGetValue(k, out v) && v != null ? Convert.ToString(v, System.Globalization.CultureInfo.InvariantCulture) : ""; }
+}
+'@
+[Finder]::ThumbDir = Join-Path $PSScriptRoot 'thumbs'
+[Finder]::Warm()       # the first look at Recent resolves ~150 shortcuts: do it now, not on the first search
+[TouchSwipe]::Extra = [Delegate]::CreateDelegate([Func[Net.HttpListenerRequest, Net.HttpListenerResponse, bool]], [Finder].GetMethod('Serve'))
 [TouchSwipe]::StartEvents($port + 1, $token)          # 47614: the instant key / swipe channel
 
 $iconDir = Join-Path $PSScriptRoot 'icons'; New-Item -ItemType Directory -Force $iconDir | Out-Null
@@ -1010,6 +1541,7 @@ function Lp-Apps {
         }
         try { $script:uaScore = Ua-Scores $list } catch { $script:uaScore = @{} }
         $script:lpApps = $list; $script:lpByK = $byK; $script:lpAt = Get-Date
+        try { $ids = @{}; foreach ($kv in $byK.GetEnumerator()) { $ids[$kv.Key] = [string]$kv.Value.AppID }; [Finder]::SetApps($ids) } catch {}   # the fast channel opens these at once
     }
     return $script:lpApps
 }
@@ -1087,11 +1619,22 @@ $settingsPages = @{ wifi = 'network-wifi'; network = 'network'; bluetooth = 'blu
     touchpad = 'devices-touchpad'; mouse = 'mousetouchpad'; keyboard = 'keyboard'; storage = 'storagesense'; privacy = 'privacy'; accounts = 'yourinfo'; time = 'dateandtime'
     language = 'regionlanguage'; printers = 'printers'; vpn = 'network-vpn'; hotspot = 'network-mobilehotspot'; nightlight = 'nightlight'; about = 'about'; colors = 'colors'
     themes = 'themes'; taskbar = 'taskbar'; defaultapps = 'defaultapps'; startup = 'startupapps'; gaming = 'gaming-gamebar'; accessibility = 'easeofaccess'; home = '' }
+$sysPages = @{                                                          # Launchpad search: deep Windows pages (Control Panel and tools)
+    lid = @('control.exe', '/name Microsoft.PowerOptions /page pageGlobalSettings'); powerplan = @('control.exe', '/name Microsoft.PowerOptions')
+    soundcpl = @('control.exe', 'mmsys.cpl'); recording = @('control.exe', 'mmsys.cpl,,1'); sounds = @('control.exe', 'mmsys.cpl,,2')
+    devmgmt = @('devmgmt.msc'); diskmgmt = @('diskmgmt.msc'); envvars = @('rundll32.exe', 'sysdm.cpl,EditEnvironmentVariables')
+    sysadv = @('SystemPropertiesAdvanced.exe'); perf = @('SystemPropertiesPerformance.exe'); protection = @('SystemPropertiesProtection.exe'); remote = @('SystemPropertiesRemote.exe')
+    ncpa = @('control.exe', 'ncpa.cpl'); appwiz = @('control.exe', 'appwiz.cpl'); netplwiz = @('netplwiz.exe'); mousecpl = @('control.exe', 'main.cpl'); keyboardcpl = @('control.exe', 'keyboard')
+    timedate = @('control.exe', 'timedate.cpl'); inetcpl = @('control.exe', 'inetcpl.cpl'); firewall = @('control.exe', 'firewall.cpl'); credman = @('control.exe', '/name Microsoft.CredentialManager')
+    folderopts = @('control.exe', 'folders'); screensaver = @('control.exe', 'desk.cpl,,@screensaver'); intl = @('control.exe', 'intl.cpl'); features = @('optionalfeatures.exe')
+    services = @('services.msc'); taskschd = @('taskschd.msc'); eventvwr = @('eventvwr.msc'); cleanmgr = @('cleanmgr.exe'); defrag = @('dfrgui.exe'); sysinfo = @('msinfo32.exe')
+    resmon = @('resmon.exe'); fonts = @('control.exe', 'fonts'); control = @('control.exe'); colorcal = @('dccw.exe'); mobility = @('mblctr.exe') }
 $folders = @{ downloads = 'shell:Downloads'; documents = 'shell:Personal'; desktop = 'shell:Desktop'; pictures = 'shell:My Pictures'; music = 'shell:My Music'
     videos = 'shell:My Video'; recycle = 'shell:RecycleBinFolder'; home = 'shell:UsersFilesFolder'; thispc = 'shell:MyComputerFolder'; screenshots = 'shell:Screenshots'; onedrive = 'shell:OneDrive' }
 $engines = @{ g = 'https://www.google.com/search?q='; yt = 'https://www.youtube.com/results?search_query='; maps = 'https://www.google.com/maps/search/'
     wiki = 'https://en.wikipedia.org/w/index.php?search='; define = 'https://www.google.com/search?q=define+'; scholar = 'https://scholar.google.com/scholar?q='
     translate = 'https://translate.google.com/?sl=auto&tl=en&text='; gh = 'https://github.com/search?q='; amazon = 'https://www.amazon.in/s?k=' }
+try { [Finder]::SetEngines($engines) } catch {}                         # web searches open from the fast channel, at once
 $sites = @{ gmail = 'https://mail.google.com'; youtube = 'https://www.youtube.com'; drive = 'https://drive.google.com'; calendar = 'https://calendar.google.com'
     github = 'https://github.com'; classroom = 'https://classroom.google.com'; docs = 'https://docs.google.com'; sheets = 'https://sheets.google.com'; slides = 'https://slides.google.com'
     keep = 'https://keep.google.com'; netflix = 'https://www.netflix.com'; chatgpt = 'https://chatgpt.com'; claude = 'https://claude.ai'; notion = 'https://www.notion.so'
@@ -1181,7 +1724,7 @@ while ($listener.IsListening) {
         }
         elseif ($req.Url.AbsolutePath -eq '/launch') {
             $a = Lp-Find $req.QueryString['k']
-            if ($a) { $res.StatusCode = 204; $res.AddHeader('Access-Control-Allow-Origin', '*'); $res.Close(); [void](Lp-Launch $a.K); Lp-Count $a; continue }
+            if ($a) { $res.StatusCode = 204; $res.AddHeader('Access-Control-Allow-Origin', '*'); $res.Close(); if ($req.QueryString['count'] -ne '1') { [void](Lp-Launch $a.K) }; Lp-Count $a; continue }
         }
         elseif ($req.Url.AbsolutePath -eq '/web') {
             $q = [string]$req.QueryString['q']; $e = [string]$req.QueryString['e']; if (-not $engines.ContainsKey($e)) { $e = 'g' }
@@ -1190,6 +1733,49 @@ while ($listener.IsListening) {
         elseif ($req.Url.AbsolutePath -eq '/site')     { $u = $sites[[string]$req.QueryString['s']]; if ($u) { Start-Process $u; $status = 204 } }
         elseif ($req.Url.AbsolutePath -eq '/settings') { $p = [string]$req.QueryString['p']; if ($settingsPages.ContainsKey($p)) { Start-Process "ms-settings:$($settingsPages[$p])"; $status = 204 } }
         elseif ($req.Url.AbsolutePath -eq '/folder')   { $f = $folders[[string]$req.QueryString['f']]; if ($f) { Start-Process 'explorer.exe' $f; $status = 204 } }
+        # ---- Launchpad search like Windows search: open a found file, show it in its folder, any Settings page, a Store page, app actions ----
+        elseif ($req.Url.AbsolutePath -eq '/openf' -or $req.Url.AbsolutePath -eq '/reveal') {
+            $p = [string]$req.QueryString['p']
+            if ($p -and $p.Length -lt 1000 -and [IO.Path]::IsPathRooted($p) -and (Test-Path -LiteralPath $p)) {
+                $script = $p -match '(?i)\.(ps1|psm1|bat|cmd|vbs|vbe|js|jse|wsf|wsh|hta|scr|msi|reg)$'          # scripts are only shown, never run from here
+                if ($req.Url.AbsolutePath -eq '/reveal' -or $script) { Start-Process 'explorer.exe' "/select,`"$p`"" } else { Start-Process -FilePath $p }
+                $status = 204
+            }
+        }
+        elseif ($req.Url.AbsolutePath -eq '/sys') {                          # classic Windows pages search can open (fixed list: nothing else can be run)
+            $c = $sysPages[[string]$req.QueryString['id']]
+            if ($c) { if ($c.Count -gt 1) { Start-Process $c[0] $c[1] } else { Start-Process $c[0] }; $status = 204 }
+        }
+        elseif ($req.Url.AbsolutePath -eq '/mss') { $u = [string]$req.QueryString['u']; if ($u -cmatch '^ms-settings:[a-z0-9\-]*$') { Start-Process $u; $status = 204 } }
+        elseif ($req.Url.AbsolutePath -eq '/storeopen') { $id = [string]$req.QueryString['id']; if ($id -cmatch '^[A-Z0-9]{12}$') { Start-Process "ms-windows-store://pdp/?productid=$id"; $status = 204 } }
+        elseif ($req.Url.AbsolutePath -eq '/appverbs') {                     # what Windows offers for this app: run as administrator, file location, pin to Start
+            $a = Lp-Find $req.QueryString['k']; $out = @(); $exe = ''
+            if ($a) { try { $it = (New-Object -ComObject Shell.Application).Namespace('shell:AppsFolder').ParseName($a.AppID)
+                if ($it) { if ($it.Path -match '(?i)\.exe$') { $exe = $it.Path }
+                    foreach ($v in $it.Verbs()) { $n = ($v.Name -replace '&', '').Trim(); if ($n -in 'Run as administrator', 'Open file location', 'Pin to Start', 'Unpin from Start') { $out += $n } } } } catch {} }
+            Send-Json $res ('{"verbs":' + (ConvertTo-Json @($out) -Compress) + ',"exe":' + (ConvertTo-Json $exe -Compress) + '}'); continue
+        }
+        elseif ($req.Url.AbsolutePath -eq '/appverb') {
+            $a = Lp-Find $req.QueryString['k']; $want = [string]$req.QueryString['v']
+            if ($a -and $want -in 'Run as administrator', 'Open file location', 'Pin to Start', 'Unpin from Start') {
+                try { $it = (New-Object -ComObject Shell.Application).Namespace('shell:AppsFolder').ParseName($a.AppID)
+                    foreach ($v in $it.Verbs()) { if (($v.Name -replace '&', '').Trim() -eq $want) { $v.DoIt(); $status = 204; break } } } catch {}
+                if ($want -eq 'Run as administrator' -and $status -eq 204) { Lp-Count $a }
+            }
+        }
+        elseif ($req.Url.AbsolutePath -eq '/apprecent') {                    # this app's recent files (like its jump list)
+            $a = Lp-Find $req.QueryString['k']; $json = '[]'
+            if ($a) { $exe = ''; try { $it = (New-Object -ComObject Shell.Application).Namespace('shell:AppsFolder').ParseName($a.AppID); if ($it.Path -match '(?i)\.exe$') { $exe = $it.Path } } catch {}
+                try { $json = [Finder]::Recent(4, $a.AppID, $exe) } catch {} }
+            Send-Json $res $json; continue
+        }
+        elseif ($req.Url.AbsolutePath -eq '/ytblip') {
+            $s = Pick-Session
+            if ($s -and [string]$s.SourceAppUserModelId -match '_crx_cinhi' -and [string]$s.GetPlaybackInfo().PlaybackStatus -eq 'Playing') {
+                [void](Await-Op ($s.TryPauseAsync()) ([bool])); Start-Sleep -Milliseconds 90; [void](Await-Op ($s.TryPlayAsync()) ([bool]))
+            }
+            $status = 204
+        }
         elseif ($req.Url.AbsolutePath -eq '/key') {
             # play/pause/next/previous go to the player the wallpaper shows (a media key would go to whatever Windows picks)
             $k = [string]$req.QueryString['k']; $s = $script:shownSession; $done = $false

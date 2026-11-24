@@ -9,6 +9,7 @@ helper/google-token.dat
 helper/google-library.json
 helper/google-state.json
 helper/*.log
+helper/thumbs/
 helper/winkey.off
 helper/peek.test
 helper/peek.png

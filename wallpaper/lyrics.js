@@ -44,7 +44,9 @@
   #np .art:active{scale:.97;transition:scale .15s ease}
   #np .art img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity .8s ease}
   #np .art img.show{opacity:1}
-  #np .art.swap img.show{opacity:.28;filter:blur(1.4vh);transition:opacity .35s ease,filter .35s ease}   /* the last song's cover, until this one's arrives */
+  #np .art.swap img.show{opacity:.72;filter:blur(1.6vh) saturate(1.15) brightness(.82);scale:1.06;transition:opacity .45s ease,filter .45s ease,scale .8s cubic-bezier(.2,.9,.25,1)}   /* the last picture, softly out of focus, until the next one arrives */
+  #np .art.swap canvas.freeze.show{filter:blur(1.6vh) saturate(1.15) brightness(.82);scale:1.06;transition:opacity .3s ease,filter .45s ease,scale .8s cubic-bezier(.2,.9,.25,1)}   /* (a video: its last frame) */
+  #np .art img.show{filter:none;scale:1}
   #np .art::after{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;
        box-shadow:inset 0 0 0 1px rgba(255,255,255,.2),inset 0 .25vh .5vh rgba(255,255,255,.16),inset 0 -.3vh .8vh rgba(0,0,0,.12)}
   #np .art.paused{scale:.9;transition:scale .6s cubic-bezier(.2,.9,.25,1)}
@@ -308,7 +310,9 @@
       if (x.song) fetchYtl(x.v);                                          // YouTube Music's synced lyrics, ready before it starts
       if (x.art) { const im = new Image(); im.src = bigArt(x.art); }
     }
-    if (next[0] && !next[0].song) { const v = next[0].v; setTimeout(() => { if (musicMode && media && qn(media.title) === qn(title)) warmUp(v); }, 5000); }
+    // the next video loads early, paused out of sight (when YouTube Music gets there it just plays): an up-next video, or the next song's own video while videos play
+    const nx = next[0], wv = nx && (!nx.song ? nx.v : np.classList.contains('video') ? pairOf.get(nx.v) : null);
+    if (wv) setTimeout(() => { if (musicMode && media && qn(media.title) === qn(title)) warmUp(wv); }, 2500);
     return true;
   }
   async function followQueue(m) {                                        // on every song change
@@ -326,9 +330,9 @@
   // seconds); LRCLIB stays for everything else and for tracks YouTube Music has no synced lyrics for.
   const YTM_APP = /_crx_cinhi|youtube ?music/i, ytl = new Map();
   const sleep = ms => new Promise(r => setTimeout(r, ms));
-  async function ytmTrackId(m) {
-    let shape = curThumb;                                                // Windows' picture tells a song (square) from a video (wide)
-    for (let i = 0; i < 8 && !shape && m.art && L; i++) { shape = await fingerprint(`${base}/mediaart?t=${L.token}&k=${encodeURIComponent(m.artist + '|' + m.title)}&n=${10 + i}`); if (!shape) await sleep(400); }
+  async function ytmTrackId(m, asSong) {
+    let shape = asSong ? { aspect: 1 } : curThumb;                       // Windows' picture tells a song (square) from a video (wide)
+    for (let i = 0; i < 8 && !shape && m.art && L; i++) { shape = await fingerprint(`${base}/mediaart?t=${L.token}&k=${encodeURIComponent(m.artist + '|' + m.title)}&n=${Date.now()}-${i}`); if (!shape) await sleep(400); }
     const t = qn(m.title), picked = lastPick && lastPick.t === t ? lastPick.v : null;
     if (shape ? shape.aspect > 1.25 : picked && !songIds.has(picked)) return { id: null, video: true };   // a video: no lyrics needed
     const out = [], add = v => { if (v && !out.includes(v)) out.push(v); };
@@ -341,9 +345,9 @@
     return out[0] ? { id: out[0], video: false } : null;
   }
   const PLAYER_APP = /_crx_cinhi|youtube ?music|spotify|applemusic|apple music|tidal|deezer|amazon ?music|soundcloud/i;
-  async function ytmLyrics(m) {
+  async function ytmLyrics(m, asSong) {
     if (!L || !LIVE || !YTM_APP.test(m.app || '')) return { lines: null, video: !PLAYER_APP.test(m.app || '') };   // a browser: a video (lyrics only tell it's music)
-    const tr = await ytmTrackId(m); if (!tr) return null;
+    const tr = await ytmTrackId(m, asSong); if (!tr) return null;
     if (tr.video) return { lines: null, video: true, noFallback: true };   // music videos and live performances: the video alone
     return (await fetchYtl(tr.id)) || { lines: null, video: false };
   }
@@ -378,7 +382,7 @@
   window.__vstate = () => ({ vid: vid && { id: vid.id, ready: vid.ready, playing: !!vid.playing }, gaveUp, vidTries, videoCover, lastPick, lyrSrc, cls: np.className, bad: [...badVids], songs: songIds.size, music: musicMode });
   let spare = null;                                                      // the last player, paused and hidden, ready for the next video
   function stopVideo(keep) {
-    hideFreeze(); wasPlaying = null;
+    hideFreeze(); wasPlaying = null; liveAmbAt = 0;                      // the screen's live colours stop with the video: the next cover colours the stripes
     if (!vid) return; V('stop', vid.id, keep ? '(kept)' : '');
     if (keep && vid.ready && !vid.failed) {
       if (spare && spare !== vid.el) spare.remove();
@@ -388,10 +392,12 @@
   }
   function dropSpare() { if (spare) { spare.remove(); spare = null; } }
   // keep trying while a video should be playing (a missed start, or coming back from the clock)
-  setInterval(() => { if (musicMode && np.classList.contains('video') && !vid && !gaveUp && media && media.title && vidTries < 3) startVideo(media); }, 2500);
-  function giveUpVideo() { V('give up', 'cover?', !!videoCover);                                               // no video will play here: the song's cover if it has one, else the video's picture
-    gaveUp = true; stopVideo(true);
-    if (videoCover) { np.classList.remove('video'); document.body.classList.remove('npvideo'); showArt(videoCover); }
+  setInterval(() => { if (musicMode && shot && shot.video && !want && np.classList.contains('video') && !vid && !gaveUp && media && media.title && vidTries < 3) startVideo(media); }, 2500);   // (only once this track is decided)
+  function giveUpVideo() { V('give up', 'cover?', !!videoCover);                                               // no video will play here: the song's cover (sharp, 1000 px)
+    gaveUp = true; stopVideo(true); const gen = coverGen, m = media;
+    const toCover = u => { if (gen !== coverGen || !u) return false; np.classList.remove('video'); document.body.classList.remove('npvideo'); showArt(u); return true; };
+    if (toCover(videoCover)) return;
+    if (m) artCandidates(m).then(list => { if (!toCover(list[0]) && gen === coverGen && m.art && L) showArt(`${base}/mediaart?t=${L.token}&k=${encodeURIComponent((m.artist + '|' + m.title).toLowerCase())}&n=${Date.now()}`); }).catch(() => {});
   }
   // which video is playing: the candidates' pictures against Windows' picture of what plays (YouTube Music can switch a song to its video)
   const fpCache = new Map();
@@ -412,44 +418,83 @@
         if (pairOf.has(x.v)) out.push(pairOf.get(x.v));
       }));
       const j2 = await ytmSearch(`${so.title} ${so.artist} official video`.trim()), items2 = j2 ? window.__shadowYtm.parse(j2) : [];
-      items2.filter(x => x.v && x.kind !== 'Song' && qn(x.title).includes(t)).slice(0, 4).forEach(x => out.push(x.v));
+      const art2 = (so.artist || '').toLowerCase().split(/[,&]| x | feat/)[0].trim();
+      items2.filter(x => x.v && x.kind !== 'Song' && qn(x.title).includes(t) && (/lyric/i.test(m.title || '') || (art2 && (x.sub || '').toLowerCase().includes(art2)) || !/lyric/i.test((x.title || '') + ' ' + (x.sub || '')))).slice(0, 4).forEach(x => out.push(x.v));
     } catch (_) {}
     V('more', out.join(','));
     return out;
   }
+  const urlSeen = { key: '', n: 0 }, vidOwner = new Map();               // video id -> the track it was seen with first
+  function urlVid(m) {
+    if (!media || !media.vid || songIds.has(media.vid)) return null;                       // (YouTube Music's address, or a browser tab's)
+    const id = (m.artist + '|' + m.title).toLowerCase();
+    if (vidOwner.has(media.vid) && vidOwner.get(media.vid) !== id) return null;   // (a stale address: the last track's video)
+    return (media.artist + '|' + media.title).toLowerCase() === id && urlSeen.key === id + '|' + media.vid && urlSeen.n >= 3 ? media.vid : null;
+  }
+  window.__urlVid = () => ({ vid: media && media.vid, seen: urlSeen });
   async function videoCandidates(m) {
+    for (let i = 0; i < 12 && !urlVid(m) && media && media.vid; i++) await sleep(150);   // (the address settles in a moment)
+    const uv = urlVid(m);
+    if (uv) { V('youtube music plays', uv); const o = [uv]; o.sure = true; o.exact = new Set([uv]); return o; }
     const so = songOf(m), key = qn(so.title), out = [], exact = new Set();
     const add = (v, sure) => { if (v && !badVids.has(v) && !songIds.has(v)) { if (!out.includes(v)) out.push(v); if (sure) exact.add(v); } };
     if (lastPick && lastPick.t === qn(m.title)) add(songIds.has(lastPick.v) ? pairOf.get(lastPick.v) : lastPick.v, true);   // what you picked, or its video
+    for (const x of queue) if (x.song && qn(x.title) === qn(m.title) && pairOf.has(x.v)) add(pairOf.get(x.v), true);   // the video YouTube Music pairs with this song (what its Video switch plays)
     add(queueVid.get(qn(m.title)), true);                                // YouTube Music's own up-next
-    if (exact.size) { out.exact = exact; out.sure = true; return out; }  // known exactly: no search, no waiting
+    if (exact.size && !curThumb) { out.exact = exact; out.sure = true; return out; }   // no picture yet: start with it (checked when the picture comes)
     try {
       const j = await ytmSearch(`${so.title} ${so.artist}`.trim(), true); const items = j ? window.__shadowYtm.parse(j) : [];
       const lenOf = x => { const q = (x.sub || '').match(/(\d+):(\d+)\s*$/); return q ? +q[1] * 60 + +q[2] : 0; };
       items.filter(x => x.v && x.kind === 'Song').forEach(x => songIds.add(x.v));
-      const vids = items.filter(x => x.v && x.kind !== 'Song' && qn(x.title).includes(key));
       const art = (so.artist || '').toLowerCase().split(/[,&]| x | feat/)[0].trim(), own = x => art && (x.sub || '').toLowerCase().includes(art) ? 1 : 0;
+      const lyricOk = /lyric/i.test(m.title || ''), notLyric = x => lyricOk || own(x) || !/lyric/i.test((x.title || '') + ' ' + (x.sub || ''));
+      const vids = items.filter(x => x.v && x.kind !== 'Song' && qn(x.title).includes(key) && notLyric(x));
       const omv = x => x.mvt === 'MUSIC_VIDEO_TYPE_OMV' ? 1 : 0;
-      vids.sort((a, b) => omv(b) - omv(a) || own(b) - own(a) || Math.abs(lenOf(a) - (m.dur || 0)) - Math.abs(lenOf(b) - (m.dur || 0))).slice(0, 5).forEach(x => add(x.v));   // official videos first, then the artist's own uploads
+      const views = x => { const q = (x.sub || '').match(/([\d.]+)\s*([KMB]?)\s*views/i); return q ? +q[1] * ({ K: 1e3, M: 1e6, B: 1e9 }[q[2].toUpperCase()] || 1) : 0; };
+      // official videos first, then the artist's own uploads, then the most watched. Not by length: a lyric video has the song's exact length,
+      // so "closest length" picked lyric videos over the real one (two uploads can both be marked official)
+      vids.sort((a, b) => omv(b) - omv(a) || own(b) - own(a) || views(b) - views(a)).slice(0, 5).forEach(x => add(x.v));
+      // the upload named exactly as shown ("Miracles (Official Music Video)"): searched as it is, put first
+      const rawT = (m.title || '').trim();
+      if (/[\(\[]/.test(rawT)) {
+        const j3 = await ytmSearch(`${rawT} ${so.artist}`.trim(), true), items3 = j3 ? window.__shadowYtm.parse(j3) : [];
+        items3.filter(x => x.v && x.kind !== 'Song' && (x.title || '').trim().toLowerCase() === rawT.toLowerCase()).slice(0, 2).reverse().forEach(x => { if (!badVids.has(x.v) && !songIds.has(x.v)) { const i = out.indexOf(x.v); if (i >= 0) out.splice(i, 1); out.unshift(x.v); } });
+      }
+      // and the video YouTube Music pairs with this song, ahead of the search
+      const songs = items.filter(x => x.v && x.kind === 'Song' && qn(x.title) === key).slice(0, 1);
+      for (const x of songs) {
+        if (!pairOf.has(x.v)) { const n = await getJ(`${evBase}/ytnext?${new URLSearchParams({ v: x.v, list: '', t: L.token })}`).catch(() => null);
+          (function walk(o) { if (!o || typeof o !== 'object') return; if (Array.isArray(o)) { o.forEach(walk); return; }
+            const w = o.playlistPanelVideoWrapperRenderer;
+            if (w) { const a = w.primaryRenderer?.playlistPanelVideoRenderer?.videoId, b = w.counterpart?.[0]?.counterpartRenderer?.playlistPanelVideoRenderer?.videoId; if (a && b) { pairOf.set(a, b); pairOf.set(b, a); } }
+            for (const k in o) walk(o[k]); })(n && n.contents); }
+        if (pairOf.has(x.v)) { const pv = pairOf.get(x.v); if (pv && !badVids.has(pv) && !out.includes(pv)) out.unshift(pv); }
+      }
     } catch (_) {}
-    out.exact = exact; if (!out.length || !curThumb) { out.sure = out.length > 0 && !curThumb; return out; }   // (one candidate is checked against the picture too)
-    const score = v => fpCache.has(v) ? Promise.resolve(fpCache.get(v)) : fingerprint(`https://i.ytimg.com/vi/${v}/mqdefault.jpg`).then(fp => { fpCache.set(v, fp); return fp; });
-    let d = await Promise.all(out.map(v => score(v).then(fp => fpDiff(fp, curThumb))));
-    if (Math.min(...d) >= 55) {                                          // none matches: look further
+    out.exact = exact; if (!out.length || !curThumb) { out.sure = false; return out; }   // a search result is never played unchecked   // (one candidate is checked against the picture too)
+    const ZOOMS = [1, 1.15, 1.3, 1.45];                                 // (Windows' picture of a video can be its thumbnail zoomed in)
+    const score = v => fpCache.has(v) ? Promise.resolve(fpCache.get(v)) : fingerprint(`https://i.ytimg.com/vi/${v}/mqdefault.jpg`, ZOOMS).then(fp => { fpCache.set(v, fp); return fp; });
+    const best = fps => fps ? Math.min(...fps.map(f => fpDiff(f, curThumb))) : 999;
+    let d = await Promise.all(out.map(v => score(v).then(best)));
+    if (Math.min(...d) >= 32) {                                          // none matches clearly: look further
       const more = await moreVideos(m, so);
       for (const v of more) if (!out.includes(v) && !badVids.has(v)) out.push(v);
-      d = await Promise.all(out.map(v => score(v).then(fp => fpDiff(fp, curThumb))));
+      d = await Promise.all(out.map(v => score(v).then(best)));
     }
     const ranked = out.map((v, i) => [v, d[i]]).sort((a, b) => a[1] - b[1]); V('match', ranked.map(x => x[0] + ':' + Math.round(x[1])).join(' '));
     const res = ranked.map(x => x[0]); res.exact = exact;
-    res.sure = exact.has(res[0]) || ranked[0][1] < 55;                   // a search result only when its picture clearly matches what plays
-    if (!res.sure && exact.size) { const e = res.find(v => exact.has(v)); res.splice(res.indexOf(e), 1); res.unshift(e); res.sure = true; }
+    res.sure = ranked[0][1] < 32;                                        // the picture of what plays decides, even over a remembered pick (right ones score ~20-45)
+    // YouTube Music's own pairing (a song's video: what its Video switch plays) is trusted unless its picture clearly disagrees:
+    // the 8 x 8 picture check alone scored the real "UP!" video 49 while lyric uploads have scored 54
+    const isPair = v => pairOf.has(v), bp = !res.sure && ranked.find(([v, dd]) => isPair(v) && dd < 42);
+    if (bp) { res.splice(res.indexOf(bp[0]), 1); res.unshift(bp[0]); res.sure = true; V('paired video', bp[0], Math.round(bp[1])); }
+    if (!res.sure && exact.size) { const e = res.find(v => exact.has(v)); res.splice(res.indexOf(e), 1); res.unshift(e); res.sure = true; }   // nothing matches the picture: the remembered one
     return res;
   }
   // the video for this track when it is known for sure without looking: what you picked (a video), or YouTube Music's up-next
   async function checkGuess(m) {                                       // the picture is here: was the early pick right?
-    const g = vid; if (!g || !g.guess) return; g.guess = false;
-    const c = await videoCandidates(m); if (vid !== g) return;
+    const g = vid, g0 = coverGen; if (!g || !g.guess) return; g.guess = false;
+    const c = await videoCandidates(m); if (vid !== g || g0 !== coverGen) return;
     if (!c.sure) { V('guess wrong, no match'); giveUpVideo(); }
     else if (c[0] !== g.id) { V('guess wrong', g.id, '->', c[0]); stopVideo(true); startVideo(m); }
   }
@@ -457,7 +502,12 @@
     if (lines) { lines = null; build(); } lyrSrc = '';
     np.classList.add('solo'); document.body.classList.add('npsolo');
   }
-  function knownVideo(m) { const t = qn(m.title); if (lastPick && lastPick.t === t && !songIds.has(lastPick.v)) return lastPick.v; return queueVid.get(t) || null; }
+  function knownVideo(m) {
+    const t = qn(m.title); if (lastPick && lastPick.t === t && !songIds.has(lastPick.v)) return lastPick.v;
+    if (queueVid.get(t)) return queueVid.get(t);
+    if (lastWasVideo) { const sv = queue.find(x => x.song && qn(x.title) === t && pairOf.has(x.v)); if (sv) return pairOf.get(sv.v); }   // (checked against Windows' picture right after)
+    return null;
+  }
   // the next video in the queue, loaded and paused out of sight: when YouTube Music gets there, it is just un-paused
   let warm = null;
   function warmUp(v) {
@@ -472,16 +522,20 @@
   let starting = false;                                                 // one start at a time (several at once raced each other: wrong videos flashed)
   async function startVideo(m) {
     if (!L || !LIVE || (vid && !vid.failed) || gaveUp || starting) return;
-    starting = true;
-    try { if (!knownVideo(m)) for (let i = 0; i < 3 && !curThumb; i++) await sleep(200); await startVideo1(m); } finally { starting = false; }
+    starting = true; const g0 = coverGen;
+    try { if (!knownVideo(m)) for (let i = 0; i < 3 && !curThumb; i++) await sleep(200); if (g0 === coverGen) await startVideo1(m, g0); } finally { starting = false; }
+    if (g0 !== coverGen && musicMode && media && np.classList.contains('video') && !vid && !gaveUp) startVideo(media);   // the track changed meanwhile: this one now
   }
-  async function startVideo1(m) {
+  async function startVideo1(m, g0 = coverGen) {
     if (!L || !LIVE || (vid && !vid.failed)) return;
     if (gaveUp) return;
-    const guess = !curThumb && !knownVideo(m);                            // no picture yet: the likeliest one, checked when the picture comes
+    const guess = !curThumb;                                              // no picture yet: the likeliest one, checked when the picture comes
     const cands = await videoCandidates(m), v = cands.sure ? cands[0] : null; V('start', m.title, 'cands', cands.join(','), cands.sure ? 'sure' : 'not sure');
+    if (g0 !== coverGen) { V('stale start dropped', m.title); return; }  // another track started while this one was being looked up
+    if (!v && YTM_APP.test(m.app || '') && media && media.vid && shot && shot.video && Date.now() - shot.at < 8000) { V('waiting for the youtube music address'); return; }   // (it names the video in a moment)
     if (!v) { if (cands.length && !cands.sure) { giveUpVideo(); return; } if (++vidTries >= 3) giveUpVideo(); return; }   // no wrong video: the real picture instead
     if (!musicMode || gaveUp || (vid && vid.id === v)) return;
+    if (!shapes.has(v)) { await Promise.race([videoShape(v), sleep(500)]); if (g0 !== coverGen || (vid && !vid.failed) || gaveUp) return; }   // its real shape first
     stopVideo();
     let el;
     if (warm && warm.id === v) {                                         // loaded early: take it over (no new load)
@@ -494,16 +548,18 @@
       el.src = `${evBase}/embed?${new URLSearchParams({ v, s: Math.max(0, now() + 1).toFixed(1), t: L.token })}`;
       vid = { el, id: v, ready: false, at: Date.now() }; artBox.appendChild(el);
     }
-    np.style.setProperty('--var', .5625); np.style.setProperty('--vm', 1);
-    videoShape(v).then(ar => { if (vid && vid.id === v && ar) { np.style.setProperty('--var', ar.toFixed(4)); np.style.setProperty('--vm', Math.min(1, .5625 / ar).toFixed(4)); } });
-    showArt(`https://i.ytimg.com/vi/${v}/maxresdefault.jpg`);              // the video's own picture until it plays (not the song's square cover)
+    const setShape = ar => { if (!ar) return; const cur = +np.style.getPropertyValue('--var') || .5625; if (Math.abs(cur - ar) < .015) return;
+      np.style.setProperty('--var', ar.toFixed(4)); np.style.setProperty('--vm', Math.min(1, .5625 / ar).toFixed(4)); };
+    if (shapes.has(v)) setShape(shapes.get(v)); else videoShape(v).then(ar => { if (vid && vid.id === v) setShape(ar || .5625); });   // (measured once: no resizing back and forth)
+    hqGen = coverGen; shownFp = null; showArt(`https://i.ytimg.com/vi/${v}/maxresdefault.jpg`);   // the video's own sharp picture until it plays (not the song's square cover)
     const mine = vid; vid.guess = guess;
     if (guess && curThumb) setTimeout(() => checkGuess(m), 0);         // the picture came while this was being set up: check now
     setTimeout(function check() {                                        // never started playing: a fresh player
-      if (!vid || vid !== mine || vid.playing || vid.failed) return; V('not playing after 15s', vid.id, media && media.status);   // (this video's own check: a reused player is a new video)
+      if (!vid || vid !== mine || vid.playing || vid.failed) return; V('not playing yet', vid.id, media && media.status);   // (this video's own check: a reused player is a new video)
       if (!media || media.status !== 'Playing') { setTimeout(check, 3000); return; }
-      stopVideo(); if (++vidTries < 3 && media) startVideo(media); else giveUpVideo();
-    }, 15000);
+      if (!mine.kicked) { mine.kicked = true; try { mine.el.contentWindow.postMessage({ cmd: 'kick', pos: now() + .3, playing: true }, '*'); } catch (_) {} setTimeout(check, 5000); return; }   // a nudge first
+      stopVideo(); if (++vidTries < 3 && media) startVideo(media); else giveUpVideo();   // then the same (best-matching) video in a fresh player
+    }, 6000);
   }
   // The picture's real shape (many videos are filmed wider than 16:9 and come with black bars): measured on YouTube's own
   // stills from the start, middle and end, so the card can take that shape and the bars fall outside it.
@@ -535,9 +591,18 @@
   }
   addEventListener('message', e => {
     const d = e.data || {}; if (d.t !== 'yt' || !vid || e.source !== vid.el.contentWindow) return;
+    if (d.ev === 'drift') { (window.__drift = window.__drift || []).push(Math.round(d.d * 1000) + 'ms/lag' + d.lag); if (window.__drift.length > 20) window.__drift.shift(); return; }   // (for debugging)
     V('ev', d.ev, d.s ?? d.code ?? '', vid.id);
-    if (d.ev === 'ready') { vid.ready = true; vidSeg = 0; lastFrame = -1; syncVideo(); videoGlow(); }
-    if (d.ev === 'state' && d.s === 1 && !vid.playing) { vid.playing = true; const el = vid.el; el.classList.add('zoom', 'on'); setTimeout(() => el.classList.remove('zoom'), 3200); }   // YouTube shows its title and logo for the first seconds: the picture stays until they're gone   // shown once it really plays (no YouTube loading screen)
+    if (d.ev === 'ready') { vid.ready = true; vidSeg = 0; lastFrame = -1; syncVideo(); videoGlow();
+      const mine = vid; setTimeout(() => { if (vid === mine && !mine.playing && !mine.kicked && media && media.status === 'Playing' && musicMode) { mine.kicked = true; V('kick', mine.id); try { mine.el.contentWindow.postMessage({ cmd: 'kick', pos: now() + .3, playing: true }, '*'); } catch (_) {} } }, 2500); }   // YouTube sometimes sits unstarted: a nudge
+    if (d.ev === 'state' && d.s === 1 && !vid.playing && blipNext && YTM_APP.test((media && media.app) || '')) {
+      blipNext = false; const mine = vid;
+      setTimeout(() => { if (vid !== mine || !media || media.status !== 'Playing' || !L) return; V('blip'); blipUntil = Date.now() + 1500;
+        fetch(`${base}/ytblip?t=${L.token}`, { mode: 'no-cors' }).catch(() => {});
+        setTimeout(() => { if (vid === mine) try { mine.el.contentWindow.postMessage({ cmd: 'fresh' }, '*'); } catch (_) {} }, 1100); }, 1200);
+    }
+    if (d.ev === 'state' && d.s === 0 && media && media.status === 'Playing' && media.dur && now() < media.dur - 3) { V('video ended early: back in step'); try { vid.el.contentWindow.postMessage({ cmd: 'kick', pos: now(), playing: true }, '*'); } catch (_) {} }
+    if (d.ev === 'state' && d.s === 1 && !vid.playing) { vid.playing = true; const el = vid.el, mine = vid; setTimeout(() => { if (vid === mine) el.classList.add('on'); }, 1900); }   // YouTube shows its title and logo for the first seconds: the picture stays until they're gone   // shown once it really plays (no YouTube loading screen)
     if (d.ev === 'error') {                                              // this one can't be embedded: the next candidate, or the song's cover
       badVids.add(vid.id); stopVideo();
       if (++vidTries < 3 && media) startVideo(media); else giveUpVideo();
@@ -547,7 +612,9 @@
   function songCoverForVideo(m, gen) {
     artCandidates(m).then(list => {
       if (gen !== coverGen || !list.length || !list.strong) return;       // only an exact match (this title, this artist, a song)
-      videoCover = list[0];                                               // (shown only if no video will play)
+      videoCover = list[0];                                               // (shown if no video plays, and at once on a switch to the song)
+      coverMemo.set(qn(m.title) + '|' + qn(m.artist), list[0]);
+      const im = new Image(); im.src = list[0]; fingerprint(smallArt(list[0]));   // loaded now, ready for the switch
     });
   }
   // YouTube's storyboard for a video: its seek-preview frames (80 x 45, one every ~2 s, 100 to a sheet), brought through the helper
@@ -579,11 +646,16 @@
   }
   // The frozen frame: the video's frame at this moment drawn over the player while YouTube shows a pause/play mark or its bars
   const freeze = document.createElement('canvas'); freeze.className = 'freeze'; artBox.appendChild(freeze);
-  let freezeT = 0;
-  async function showFreeze(hold) {
-    clearTimeout(freezeT);
-    if (vid && L) try {
-      const b = await board(vid.id), f = b && await frameAt(b.big || b, now(), media && media.dur);
+  let freezeT = 0, swapFreeze = false;                                    // swapFreeze: the last video's frame, held while the next track loads
+  let lastSync = null;                                                    // the video's place at the last sync: { id, t, at }
+  const lastFrameAt = () => lastSync ? [lastSync.t + (Date.now() - lastSync.at) / 1000, lastSync.id] : [0, null];
+  let freezeTok = 0;
+  async function showFreeze(hold, t, id) {
+    clearTimeout(freezeT); const tok = ++freezeTok;
+    id = id || (vid && vid.id); if (t == null) t = now();
+    if (id && L) try {
+      const b = await board(id), f = b && await frameAt(b.big || b, t, media && media.dur);
+      if (tok !== freezeTok) return;                                      // (the next picture came first: no stale frame over it)
       if (f) {
         const r = artBox.getBoundingClientRect(), W = Math.max(2, Math.round(r.width)), H = Math.max(2, Math.round(r.height));
         freeze.width = W; freeze.height = H; const x = freeze.getContext('2d');
@@ -594,7 +666,7 @@
     } catch (_) {}
     if (hold) freezeT = setTimeout(hideFreeze, hold);
   }
-  function hideFreeze() { clearTimeout(freezeT); freeze.classList.remove('show'); }
+  function hideFreeze() { clearTimeout(freezeT); freezeTok++; freeze.classList.remove('show'); }
   let frameBusy = false, lastFrame = -1;
   async function videoGlow() {
     if (!vid || !vid.ready || !musicMode || !media || frameBusy || !L) return;
@@ -612,18 +684,20 @@
     } finally { frameBusy = false; }
   }
   setInterval(videoGlow, 700);
-  let wasPlaying = null;
+  let wasPlaying = null; const SYNC_LEAD = .04;                     // (measured: the embedded player shows its frames ~60 ms after its reported time... ahead without this)
   function syncVideo() {
     if (!vid || !vid.ready || !media) return;
     const playing = media.status === 'Playing' && musicMode;
-    if (wasPlaying !== null && playing !== wasPlaying && vid.playing && musicMode) {
-      if (!playing) showFreeze();                                         // paused: the frame it stopped on, not YouTube's pause screen
-      else { vid.el.classList.add('zoom'); showFreeze(1300); setTimeout(() => vid && vid.el.classList.remove('zoom'), 3800); }   // playing again
-    }
-    wasPlaying = playing;
-    vid.el.contentWindow.postMessage({ cmd: 'sync', pos: now() + .15, playing }, '*');
+    wasPlaying = playing; if (vid.playing) lastSync = { id: vid.id, t: now(), at: Date.now() };
+    vid.el.contentWindow.postMessage({ cmd: 'sync', pos: now() + SYNC_LEAD, playing }, '*');   // (measured against YouTube Music's own picture)
   }   // on the clock: paused, kept
-  setInterval(syncVideo, 1500);
+  setInterval(syncVideo, 450);                                         // (often: the player keeps its drift under 0.2 s)
+  window.__npKey = k => {                                               // the wallpaper's own play/pause, next, previous
+    if (!vid || !vid.el) return;
+    const post = playing => { try { vid.el.contentWindow.postMessage({ cmd: 'sync', pos: now(), playing }, '*'); } catch (_) {} };
+    if (k === 'playpause') post(!(media && media.status === 'Playing'));
+    else if (k === 'next' || k === 'prev') { if (vid.playing) { swapFreeze = true; showFreeze(0, ...lastFrameAt()); } artBox.classList.add('swap'); post(false); }
+  };
   setInterval(() => { if (vid && media && wasPlaying !== null && (media.status === 'Playing' && musicMode) !== wasPlaying) syncVideo(); }, 200);   // a pause or play right away
 
   /* ------------------------------------------------------------ music mode ------------------------------------------------------------ */
@@ -634,11 +708,44 @@
   // TV backlight: each stripe takes the colour of its own slice of the picture (12 slices, left to right). Slices with little
   // colour lean on the main hue; everything is kept light and soft
   let liveAmbAt = 0;
+  // a video's stripes: like soften, with more colour (x1.3 instead of x0.82, less white)
+  function softenV(c, hueCol, own) {
+    const m = Math.max(...c, .001); c = c.map(v => v / m);
+    c = c.map((v, k) => v * own + hueCol[k] * (1 - own));
+    const lum = .2126 * c[0] + .7152 * c[1] + .0722 * c[2];
+    return c.map(v => Math.min(1, Math.max(0, (lum + (v - lum) * 1.3) * .92 + .08)));
+  }
   function soften(c, hueCol, own) {
     const m = Math.max(...c, .001); c = c.map(v => v / m);               // as light: full brightness
     c = c.map((v, k) => v * own + hueCol[k] * (1 - own));
     const lum = .2126 * c[0] + .7152 * c[1] + .0722 * c[2];
     return c.map(v => Math.min(1, Math.max(0, (lum + (v - lum) * .82) * .86 + .14)));   // a little softened, a little lighter
+  }
+  // a song cover's stripes: rich colour - the same hue, saturation boosted (x1.6), pale tints lifted toward 50%; grey stays soft white
+  function richer(c) {
+    const m = Math.max(...c, .001); c = c.map(v => v / m);
+    const mx = Math.max(...c), mn = Math.min(...c), sat = mx ? (mx - mn) / mx : 0;
+    if (sat < .04) return c.map(v => Math.min(1, v * .92 + .08));
+    const S = Math.min(.92, Math.max(sat * 1.6, Math.min(.5, sat * 4)));
+    return c.map(v => { const t = mx > mn ? (v - mn) / (mx - mn) : 1; return 1 - S + S * t; });
+  }
+  // a song cover's stripes: the cover's MAIN colour on every stripe (whites, greys and blacks never win - a white cover with pink
+  // details is pink). A stripe keeps its own slice's shade only when that slice is the same colour family as the main colour.
+  const hueOf = c => { const mx = Math.max(...c), mn = Math.min(...c), ch = mx - mn; if (ch < 1e-4) return -1;
+    let h = mx === c[0] ? ((c[1] - c[2]) / ch) % 6 : mx === c[1] ? (c[2] - c[0]) / ch + 2 : (c[0] - c[1]) / ch + 4; return ((h + 6) % 6) * 60; };
+  function popCols(d, N, hueCol) {
+    const main = richer(hueCol), mh = hueOf(hueCol), cols = [];
+    for (let s = 0; s < 12; s++) {
+      const x0 = Math.floor(s * N / 12), x1 = Math.floor((s + 1) * N / 12); let w = 0, r = 0, g = 0, b = 0;
+      for (let y = 0; y < N; y++) for (let xx = x0; xx < x1; xx++) {
+        const i = (y * N + xx) * 4, R = d[i] / 255, G = d[i + 1] / 255, B = d[i + 2] / 255, mx = Math.max(R, G, B), mn = Math.min(R, G, B), sat = mx ? (mx - mn) / mx : 0;
+        if (mx < .14 || sat < .2) continue;                                // only coloured pixels speak
+        const ww = sat; w += ww; r += R * ww; g += G * ww; b += B * ww;
+      }
+      const c = w ? [r / w, g / w, b / w] : null, h = c ? hueOf(c) : -1, dh = h < 0 || mh < 0 ? 999 : Math.min(Math.abs(h - mh), 360 - Math.abs(h - mh));
+      cols.push(c && dh < 35 ? richer(c.map((v, k) => v * .6 + hueCol[k] * .4)) : main);   // same family: its own shade; anything else: the main colour
+    }
+    return cols;
   }
   function sliceCols(d, N, hueCol) {
     const cols = [];
@@ -663,15 +770,21 @@
     const dpr = devicePixelRatio || 1, ix = r.width * .06, iy = r.height * .06;   // a little inside the card's rounded edge
     liveBusy = true;
     try {
-      const j = await getJ(`${evBase}/vcol?${new URLSearchParams({ x: Math.round((r.left + ix) * dpr), y: Math.round((r.top + iy) * dpr), w: Math.round((r.width - ix * 2) * dpr), h: Math.round((r.height - iy * 2) * dpr), t: L.token })}`);
-      if (!j || !j.c || j.c.length !== 12) { liveFails++; return; }
+      const j = await getJ(`${evBase}/vedge?${new URLSearchParams({ x: Math.round((r.left + ix) * dpr), y: Math.round((r.top + iy) * dpr), w: Math.round((r.width - ix * 2) * dpr), h: Math.round((r.height - iy * 2) * dpr), t: L.token })}`);
+      if (!j || !j.c || j.c.length !== 12 || !j.tl || !j.tr) { liveFails++; return; }
       if (!musicMode || !vid || !vid.ready) return;                        // switched to the clock while this was on its way: no colour
       liveFails = 0;
       const raw = j.c.map(c => c.map(v => v / 255));
       // the main colour across the whole frame, for slices that are nearly black or grey
       const all = raw.reduce((s, c) => s.map((v, k) => v + c[k] / 12), [0, 0, 0]), am = Math.max(...all, .001);
       const hueCol = am < .08 ? [.92, .92, .92] : all.map(v => v / am);
-      const cols = raw.map(c => { const mx = Math.max(...c), mn = Math.min(...c), sat = mx ? (mx - mn) / mx : 0; return soften(mx < .06 ? hueCol.slice() : c, hueCol, Math.min(1, sat * 2.4) * (mx < .06 ? 0 : 1)); });
+      // stripes beside the video take its nearest top corner; stripes above it, the video's colour right there
+      const tone = c => { const mx = Math.max(...c), mn = Math.min(...c), sat = mx ? (mx - mn) / mx : 0; return softenV(mx < .06 ? hueCol.slice() : c, hueCol, Math.min(1, sat * 2.4) * (mx < .06 ? 0 : 1)); };
+      const TL = j.tl.map(v => v / 255), TR = j.tr.map(v => v / 255), cols = [];
+      for (let i = 0; i < 12; i++) {
+        const x = (i + .5) / 12 * innerWidth;
+        cols.push(tone(x < r.left ? TL : x > r.right ? TR : raw[Math.min(11, Math.max(0, Math.floor((x - r.left) / r.width * 12)))]));
+      }
       liveAmbAt = Date.now(); window.setStripeAmb?.(cols); window.setStripeTint?.(null, null, .55);
     } catch (_) { liveFails++; } finally { liveBusy = false; }
   }
@@ -702,7 +815,7 @@
         // keep the cover's hue but make it rich: at least 65% saturation, full brightness (pale lavender -> periwinkle)
         const mx2 = Math.max(...col), mn2 = Math.min(...col), sat2 = mx2 ? (mx2 - mn2) / mx2 : 0, S2 = Math.max(.5, Math.min(.8, sat2));
         const hueCol = col.map(v => { const t = mx2 > mn2 ? (v - mn2) / (mx2 - mn2) : 1; return 1 - S2 + S2 * t; });
-        if (Date.now() - liveAmbAt > 1500) window.setStripeAmb?.(sliceCols(d, N, hueCol));   // (live colours from the screen win when they're coming in)
+        if (Date.now() - liveAmbAt > 1500) window.setStripeAmb?.(cut || np.classList.contains('video') ? sliceCols(d, N, hueCol) : popCols(d, N, hueCol));   // (live colours from the screen win when they're coming in; a cover pops)
         window.setStripeTint?.(hueCol, hueCol, musicMode ? .55 : 0);
       } catch (_) {}
     };
@@ -718,12 +831,14 @@
     next.onload = () => {
       if (/ytimg\.com/.test(next.src) && next.naturalWidth <= 120 && smaller()) return;
       next.classList.add('show'); cur.classList.remove('show'); artFront = 1 - artFront; artBox.classList.remove('swap');
+      if (swapFreeze) { swapFreeze = false; hideFreeze(); }
     };
     next.onerror = () => { smaller(); };
-    next.src = src;
+    let abs = src; try { abs = new URL(src, location.href).href; } catch (_) {}
+    if (next.src === abs && next.complete && next.naturalWidth) next.onload(); else next.src = src;
   }
   // A tiny fingerprint of a picture (8 x 8, centre square) to tell whether two covers are the same artwork.
-  function fingerprint(src) {
+  function fingerprint(src, zooms) {
     return new Promise(res => {
       const im = new Image(); im.crossOrigin = 'anonymous';
       im.onload = () => {
@@ -732,9 +847,10 @@
           const a = document.createElement('canvas'); a.width = a.height = 12; const ax = a.getContext('2d', { willReadFrequently: true }); ax.drawImage(im, 0, 0, 12, 12);
           const ad = ax.getImageData(0, 0, 12, 12).data; let see = 0; for (let i = 3; i < ad.length; i += 4) if (ad[i] < 200) see++;
           if (see > 8) { res(null); return; }                               // see-through corners: an app's icon (Windows shows it before the artwork), not a cover
-          const s0 = Math.min(im.naturalWidth, im.naturalHeight);
-          x.drawImage(im, (im.naturalWidth - s0) / 2, (im.naturalHeight - s0) / 2, s0, s0, 0, 0, 8, 8);
-          const fp = Array.from(x.getImageData(0, 0, 8, 8).data).filter((_, i) => i % 4 !== 3); fp.aspect = im.naturalWidth / Math.max(1, im.naturalHeight); res(fp);
+          const one = z => { const s0 = Math.min(im.naturalWidth, im.naturalHeight) / z;
+            x.clearRect(0, 0, 8, 8); x.drawImage(im, (im.naturalWidth - s0) / 2, (im.naturalHeight - s0) / 2, s0, s0, 0, 0, 8, 8);
+            const fp = Array.from(x.getImageData(0, 0, 8, 8).data).filter((_, i) => i % 4 !== 3); fp.aspect = im.naturalWidth / Math.max(1, im.naturalHeight); return fp; };
+          res(zooms ? zooms.map(one) : one(1));
         } catch (_) { res(null); }
       };
       im.onerror = () => res(null); im.src = src;
@@ -746,45 +862,126 @@
   // then the sharp 1000 px version - but only if it is the same artwork (a search can find another release of the song).
   // On a song change: Windows' copy of what's playing first (re-checked: the player sometimes updates it a moment late),
   // then the sharpest version of the same artwork. Music videos: their album cover if there is one, else a 16:9 video card.
-  function updateCover(m, id) {
-    const gen = ++coverGen; let thumb = null, album = false;
-    const prevFp = shownFp;                                              // the last song's picture: Windows may still hand it out for a moment
-    np.classList.remove('video'); stopVideo(true); vidTries = 0; videoCover = null; gaveUp = false; curThumb = null; document.body.classList.remove('npvideo');
-    const early = knownVideo(m);                                          // known to be a video: straight to it, no waiting for Windows' picture
-    if (early) { np.classList.add('video'); document.body.classList.add('npvideo'); videoAlone(); songCoverForVideo(m, gen); showArt(`https://i.ytimg.com/vi/${early}/maxresdefault.jpg`); startVideo(m); }
-    const fromQueue = early ? `https://i.ytimg.com/vi/${early}/maxresdefault.jpg` : (pickedArt && pickedArt.t === qn(m.title) && pickedArt.u) || queueArt.get(qn(m.title));
-    if (!fromQueue) { artBox.classList.add('swap'); clearTimeout(swapT); swapT = setTimeout(() => artBox.classList.remove('swap'), 3500); }
-    if (fromQueue && !early) { album = true; showArt(fromQueue); }       // loaded early from the up-next queue: instant and exact
-    if (early) album = true;
-    const fromWindows = n => {
-      if (gen !== coverGen || !m.art || !L) return;
-      const u = `${base}/mediaart?t=${L.token}&k=${encodeURIComponent(id)}&n=${n}`;
-      fingerprint(u).then(fp => {
-        if (gen !== coverGen || !fp) return;
-        if (prevFp && fpDiff(fp, prevFp) < 8 && n < 3) return;           // still the last song's picture: wait for the new one
-        thumb = fp; curThumb = fp; if (vid && vid.guess) checkGuess(m);
-        if (early && fp.aspect <= 1.25 && np.classList.contains('video')) {   // YouTube Music played the song version after all
-          stopVideo(true); np.classList.remove('video'); document.body.classList.remove('npvideo'); album = false; shownFp = null;
+  // ONE decision per track (and per Song / Video switch): Windows' picture of what plays is the truth - square = the song
+  // version, wide = a video. It is read every ~0.6 s; when a track starts, or the picture's shape flips (seen twice), the state
+  // is committed once and the card, cover, video and lyrics all follow that single decision. Nothing guesses ahead of it.
+  let hqGen = -1, lastWasVideo = false;
+  let shot = null, want = null, flip = null, watchBusy = false, lastWatch = 0;   // committed { id, video, fp } / a track waiting for its picture
+  window.__shot = () => ({ shot: shot && { id: shot.id, video: shot.video }, want: want && want.id, flip });
+  function beginTrack(m, id) {
+    const gen = ++coverGen;
+    lastWasVideo = np.classList.contains('video');
+    if (vid && vid.playing) { swapFreeze = true; showFreeze(0, ...lastFrameAt()); }   // the last frame stays (softly) until the next picture
+    artBox.classList.add('swap');
+    stopVideo(true); vidTries = 0; videoCover = null; gaveUp = false; curThumb = null;
+    const w = { id, m, gen, at: Date.now(), prevFp: shot && shot.fp }; want = w; shot = null; flip = null;
+    clearTimeout(swapT); swapT = setTimeout(() => { if (gen === coverGen) { artBox.classList.remove('swap'); if (swapFreeze) { swapFreeze = false; hideFreeze(); } } }, 6000);   // (never left out of focus)
+    return w;
+  }
+  function updateCover(m, id) { beginTrack(m, id); lastWatch = 0; }
+  let albPend = null, blipNext = false, blipUntil = 0;
+  async function watch() {
+    if (watchBusy || !musicMode || !media || !media.title || !L || !LIVE) return;
+    const m = media, id = (m.artist + '|' + m.title).toLowerCase(), t0 = Date.now(), ytm = YTM_APP.test(m.app || '');
+    // YouTube Music's Song / Video switch: the song version has an album, a video has none (from the 0.2 s status, no picture needed)
+    if (ytm && shot && shot.id === id && !want && (m.album || '') !== shot.alb) {
+      const v = !m.album;
+      if (v === shot.video) { shot.alb = m.album || ''; albPend = null; }   // (an album that came in late: same version)
+      else if (!albPend || albPend.v !== v || albPend.id !== id) albPend = { v, id, at: t0 };
+      else if (t0 - albPend.at > 250) { albPend = null; V('switch', v ? 'to video' : 'to song', '(album)', m.title); switchTo(m, id, v, null); return; }
+    } else albPend = null;
+    if (t0 - lastWatch < (want ? 250 : (shot && !shot.fp) ? 300 : m.status === 'Playing' ? 450 : 1500)) return;
+    lastWatch = t0; watchBusy = true;
+    try {
+      if (want && want.id !== id) return;                                 // (the new track's start comes from musicTick)
+      const fp = m.art ? await Promise.race([fingerprint(`${base}/mediaart?t=${L.token}&k=${encodeURIComponent(id)}&n=${t0}`), sleep(1500).then(() => null)]) : null;
+      if (!media || (media.artist + '|' + media.title).toLowerCase() !== id) return;
+      if (want) {
+        const w = want;
+        if (!fp) {                                                        // no picture (yet): a song for an app without one; YouTube Music's album decides
+          const age = Date.now() - w.at;
+          if (!m.art && age > 1500) commit(w, null, false);
+          else if (ytm && age > 1200) { V('no picture yet: by album', m.album ? 'song' : 'video'); commit(w, null, !m.album); }
+          return;
         }
-        if (fp.aspect > 1.25 && !gaveUp) {                                            // a music video / live performance: play it
-          if (!np.classList.contains('video')) songCoverForVideo(m, gen);
-          np.classList.add('video'); document.body.classList.add('npvideo'); videoAlone(); if (!vid) startVideo(m);
+        if (w.prevFp && fpDiff(fp, w.prevFp) < 8 && Date.now() - w.at < 3000) return;          // still the last track's picture
+        commit(w, fp, fp.aspect > 1.25); return;
+      }
+      const uv = shot && shot.id === id && shot.video ? urlVid(m) : null;
+      if (uv && !starting && ((vid && vid.id !== uv) || !vid)) {
+        V('youtube music plays', uv, 'not', vid ? vid.id : 'nothing'); stopVideo(true); gaveUp = false; vidTries = 0;
+        np.classList.add('video'); document.body.classList.add('npvideo'); videoAlone(); startVideo(m); return;
+      }
+      if (!shot || shot.id !== id || !fp) return;
+      const isVid = fp.aspect > 1.25;
+      if (!shot.fp) {                                                     // waiting for Windows' picture of the new version
+        if (isVid !== shot.video) {
+          if (shot.video && !vid && Date.now() - shot.at > 3000) { V('no wide picture yet: paired video'); shot.fp = []; startVideo(m); }
+          return;
         }
-        if (!album && fpDiff(fp, shownFp) > 14) { shownFp = fp; showArt(u); }
-      });
+        shot.fp = fp; curThumb = fp;
+        if (shot.video) startVideo(m); else songCover(m, fp, coverGen);   // the video, or the cover checked against the real picture
+        return;
+      }
+      if (!shot.fp.length || isVid === shot.video || fpDiff(fp, shot.fp) < 10) { flip = null; return; }
+      if (!flip || flip.video !== isVid) { flip = { video: isVid, at: Date.now() }; return; }  // seen twice before it counts
+      flip = null; V('switch', isVid ? 'to video' : 'to song', '(picture)', m.title);
+      switchTo(m, id, isVid, fp);
+    } catch (_) {} finally { watchBusy = false; }
+  }
+  setInterval(watch, 100);
+  function switchTo(m, id, isVid, fp) {
+    if (lastPick && lastPick.t === qn(m.title)) { const o = pairOf.get(lastPick.v); lastPick = o ? { v: o, t: lastPick.t } : null; }   // what you picked is now its other version
+    const w = beginTrack(m, id); w.prevFp = null; if (isVid) blipNext = true; commit(w, fp, isVid);
+  }
+  function commit(w, fp, isVid) {
+    if (w !== want || w.gen !== coverGen) return;
+    const fits = !!fp && (fp.aspect > 1.25) === isVid;                   // (Windows' picture can lag a switch: then it isn't used)
+    want = null; shot = { id: w.id, video: isVid, fp: fits ? fp : null, alb: w.m.album || '', at: Date.now() }; curThumb = fits ? fp : null; gaveUp = false; vidTries = 0;
+    const m = w.m, gen = w.gen; V('now', isVid ? 'video' : 'song', m.title, fits ? '' : '(picture pending)');
+    if (isVid) {                                                          // a video: centred, no lyrics, its sharp picture, then the video
+      np.classList.add('video'); document.body.classList.add('npvideo'); videoAlone(); songCoverForVideo(m, gen);
+      if (fits || (YTM_APP.test(m.app || '') && media && media.vid)) startVideo(m);   // (YouTube Music's address names the video: no need to wait for the picture)
+      return;
+    }
+    np.classList.remove('video'); document.body.classList.remove('npvideo');   // the song: its own cover, square, with its lyrics
+    songCover(m, fits ? fp : null, gen);
+    if (YTM_APP.test(m.app || '')) songLyrics(m, gen);
+    else { np.classList.toggle('solo', !lines); document.body.classList.toggle('npsolo', !lines); }
+  }
+  // the song's sharp cover, chosen on small copies (all at once): the one matching Windows' picture; without that picture, the best-named one
+  const smallArt = u => /googleusercontent|ggpht/.test(u) ? u.replace(/=w\d+-h\d+[^&?#]*$/, '=w90-h90-l90-rj') : u.replace(/(maxres|sd|hq)default/, 'mqdefault');
+  const coverMemo = new Map();
+  async function songCover(m, fp, gen) {
+    const t0 = Date.now(), key = qn(m.title) + '|' + qn(m.artist);
+    const pick = async list => {
+      list = [...new Set(list.filter(Boolean))]; if (!list.length) return null;
+      if (!fp) return list[0];
+      const fps = await Promise.all(list.map(u => fingerprint(smallArt(u))));
+      let best = null, bd = 1e9; list.forEach((u, i) => { const d = fpDiff(fps[i], fp); if (d < bd) { bd = d; best = u; } });
+      return bd < 36 ? best : null;
     };
-    fromWindows(0); setTimeout(() => fromWindows(1), 500); setTimeout(() => fromWindows(2), 1300); setTimeout(() => fromWindows(3), 2600);
-    if (fromQueue) return;
-    artCandidates(m).then(async list => {
-      if (gen !== coverGen || !list.length) return;
-      for (let i = 0; i < 12 && !thumb && m.art && gen === coverGen; i++) await new Promise(r => setTimeout(r, 200));   // wait for Windows' copy to compare
-      let best = null, bd = 1e9;
-      for (const u of list) { const fp = await fingerprint(u); if (!fp) continue; const d = thumb ? fpDiff(fp, thumb) : 0; if (d < bd) { bd = d; best = { u, fp }; } }
-      if (gen !== coverGen || !best) return;
-      const isVideo = thumb && thumb.aspect > 1.25;
-      if (isVideo) return;                                                // a video plays as a video
-      if (!thumb || bd < 36) { album = true; shownFp = best.fp; showArt(best.u); }
-    });
+    let got = await pick([coverMemo.get(key), pickedArt && pickedArt.t === qn(m.title) && pickedArt.u, queueArt.get(qn(m.title)), videoCover]);
+    if (!got && gen === coverGen) { const l = await Promise.race([artCandidates(m).catch(() => []), sleep(2500).then(() => [])]); got = await pick(fp || l.strong ? l : []); }
+    if (gen !== coverGen) return;
+    if (got) coverMemo.set(key, got);
+    const u = got || (fp && shot ? `${base}/mediaart?t=${L.token}&k=${encodeURIComponent(shot.id)}&n=${gen}-c` : null);
+    V('cover', got ? 'sharp' : u ? 'windows' : 'none', (Date.now() - t0) + 'ms');
+    if (u) { shownFp = fp; showArt(u); }
+    else if (!fp) return;                                                 // (comes when Windows' picture of the song arrives)
+    else { artBox.classList.remove('swap'); if (swapFreeze) { swapFreeze = false; hideFreeze(); } }
+  }
+  // the song's lyrics: YouTube Music's own (timed to the song version), else LRCLIB
+  async function songLyrics(m, gen) {
+    if (lines) { lines = null; build(); } lyrSrc = '';
+    let r = null;
+    try { r = await ytmLyrics(m, true); } catch (_) {}
+    if (!(r && r.lines)) try { r = await findLyrics({ ...m }); } catch (_) { r = null; }
+    if (gen !== coverGen || !shot || shot.video) return;
+    const found = !!(r && r.lines && r.lines.some(x => x.text));
+    lines = found ? r.lines : null; lyrSrc = lines ? r.src || 'lrclib' : ''; build();
+    np.classList.toggle('solo', !lines); document.body.classList.toggle('npsolo', !lines);
+    placed = ''; setTimeout(() => { placed = ''; place(); }, 950);
   }
   // Cover candidates from YouTube Music (1000 px): this song by this artist, as a song or on its album
   async function artCandidates(m) {
@@ -872,7 +1069,7 @@
       if (id !== artKey) { artKey = id; updateCover(m, id); }
     }
     artBox.classList.toggle('paused', m.status !== 'Playing');
-    if (m.status !== 'Playing' && Date.now() - pausedAt > 120e3 && !pendingMin) exitMusic();     // paused for 2 minutes: back to the clock
+    if (m.status === 'Paused' && pausedAt && Date.now() - pausedAt > 120e3 && !pendingMin) exitMusic();     // paused for 2 minutes: back to the clock (a track change's in-between state isn't a pause)
   }
 
   /* ------------------------------------------------------------- the loop ------------------------------------------------------------- */
@@ -884,6 +1081,17 @@
     if (vis) tick(false);
     requestAnimationFrame(render);
   }
+  // a browser video that is music: a music video's usual title, or a song YouTube Music knows by this title and artist
+  const MV_TITLE = /official\s*(music\s*)?video|official\s*(lyric\s*)?video|official\s*audio|lyric\s*video|\(lyrics?\)|visuali[sz]er|\bm\/?v\b|music\s*video/i;
+  async function looksLikeMusic(m) {
+    if (MV_TITLE.test(m.title || '')) return true;
+    try {
+      const so = songOf(m); if (!so.title || !window.__shadowYtm) return false;
+      const j = await ytmSearch(`${so.title} ${so.artist}`.trim()), items = j ? window.__shadowYtm.parse(j) : [];
+      const ar = (so.artist || '').toLowerCase().split(/[,&]| x | feat/)[0].trim();
+      return items.some(x => x.kind === 'Song' && qn(x.title) === qn(so.title) && (!ar || (x.sub || '').toLowerCase().includes(ar)));
+    } catch (_) { return false; }
+  }
   async function poll() {
     let m = null;
     try {
@@ -891,22 +1099,32 @@
       else if (LIVE) m = await getJ(`${base}/media?t=${L.token}`);
     } catch (_) {}
     if (m && m.title) {
-      if (m.now) { const skew = Date.now() - m.now; m.upd += skew; }      // helper and page clocks agree anyway; keep it exact
+      // a browser tab's own seek bar, while it moves: the real second (ads, pauses, buffering that Windows never reported)
+      if (m.bpos != null && m.bat && m.now && m.status === 'Playing' && m.now - m.bat < 2500) {
+        const truth = m.bpos + .3 + (m.now - m.bat) / 1000, est = m.pos + (m.now - m.upd) / 1000;
+        if (Math.abs(est - truth) > 1.2) { m.pos = truth; m.upd = m.now; if (!window.__bfix || Date.now() - window.__bfix > 5000) { window.__bfix = Date.now(); V('browser position', est.toFixed(1), '->', truth.toFixed(1)); } }
+      }
+      if (m.now) { const skew = Date.now() - m.now; m.upd += skew; }
+      if (m.status === 'Paused' && Date.now() < blipUntil) { m.status = 'Playing'; m.upd = Date.now() - 50; }   // (the pause / play blink)      // helper and page clocks agree anyway; keep it exact
       if (m.status === 'Paused' && media?.status !== 'Paused') pausedAt = Date.now();
       const id = (m.artist + '|' + m.title).toLowerCase();
       media = m;
+      { const k = id + '|' + (m.vid || ''); if (urlSeen.key === k) urlSeen.n++; else { urlSeen.key = k; urlSeen.n = 1; }
+        if (m.vid && urlSeen.n >= 3 && !vidOwner.has(m.vid)) vidOwner.set(m.vid, id); }   // (an address that held for this track)
       if (id !== song) {
         song = id; lines = null; build(); changeAt = Date.now(); curThumb = null;
         { const so = songOf(m), q = `${so.title} ${so.artist}`.trim(); ytmSearch(q); ytmSearch(q, true); }   // started now: ready by the time the picture tells what it is
         followQueue(m);
-        ytmLyrics(m).catch(() => null).then(r => r && r.lines ? r : r && r.noFallback ? { lines: null, video: true } : findLyrics({ ...m, tight: !!(r && r.video) }).then(x => ({ ...x, video: !!(r && r.video) }))).catch(() => ({ lines: null })).then(r => {
+        if (!YTM_APP.test(m.app || '')) ytmLyrics(m).catch(() => null).then(r => r && r.lines ? r : r && r.noFallback ? { lines: null, video: true } : findLyrics({ ...m, tight: !!(r && r.video) }).then(x => ({ ...x, video: !!(r && r.video) }))).catch(() => ({ lines: null })).then(r => {
           if (song !== id) return;
           const found = !!(r.lines && r.lines.some(x => x.text));          // (for a video in a browser: only the sign that it's music)
           lines = found && !r.video && !np.classList.contains('video') ? r.lines : null; lyrSrc = lines ? r.src || 'lrclib' : ''; build();
           np.classList.toggle('solo', !lines);                                    // no lyrics: a bigger cover in the middle
           document.body.classList.toggle('npsolo', !lines);
           placed = ''; setTimeout(() => { placed = ''; place(); }, 950);
-          if (found && !musicMode && !dismissed && !parked && media && media.status === 'Playing') { enterMusic({ title: media.title, sub: media.artist || '' }, true); artKey = ''; }   // a music video in a browser
+          const enter = () => { if (song === id && !musicMode && !dismissed && !parked && media && media.status === 'Playing') { enterMusic({ title: media.title, sub: media.artist || '' }, true); artKey = ''; } };
+          if (found) enter();                                                // a music video in a browser
+          else if (!musicMode) looksLikeMusic(m).then(yes => { if (yes) { V('music video in a browser', m.title); enter(); } });
         });
       }
     } else { media = null; }
@@ -916,6 +1134,9 @@
   }
   place(); poll(); requestAnimationFrame(render); setInterval(place, 2000);
   // where the cover / video and its names end: the media controls sit just below when there are no lyrics
+  // the video's card, for the wallpaper to even out the stripes around it
+  setInterval(() => { const on = musicMode && np.classList.contains('video'); const r = artBox.getBoundingClientRect();
+    window.setCardBox?.(r.width > 20 ? [r.left / innerWidth, r.top / innerHeight, r.width / innerWidth, r.height / innerHeight] : null, on && r.width > 20); }, 300);
   setInterval(() => { if (!musicMode) return; const b = np.getBoundingClientRect().bottom; if (b > 0) document.body.style.setProperty('--npEnd', Math.min(innerHeight * .86, b + innerHeight * .025) + 'px'); }, 300);
   try { new ResizeObserver(() => layout()).observe(lyrBox); } catch (_) {}
   document.fonts?.addEventListener?.('loadingdone', () => layout());

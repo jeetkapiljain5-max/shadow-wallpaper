@@ -1227,14 +1227,20 @@
     if (!IN_LIVELY || window.OVERLAY) return;                        // the overlay gets its keys directly (it's a normal focused window)
     let since = -1;
     for (;;) {
+      // the helper answers within 20 s; a request that hangs longer is dropped and made again (swipes and the Windows key
+      // travel over this one connection: once it stuck, nothing reached Launchpad until the helper was restarted)
+      const ac = new AbortController(), killer = setTimeout(() => ac.abort(), 30000);
       try {
-        const j = await (await fetch(`${evBase}/wait?${q2s({ since })}`, { cache: 'no-store' })).json();
+        const j = await (await fetch(`${evBase}/wait?${q2s({ since })}`, { cache: 'no-store', signal: ac.signal })).json();
+        clearTimeout(killer);
         helperLive = true;
         if (since >= 0) (j.evs || []).forEach(ev => { try { onHelperEvent(ev); } catch (_) {} });
         since = j.seq ?? since;
-      } catch (_) { helperLive = false; since = -1; await new Promise(r => setTimeout(r, 2000)); }
+      } catch (e) { clearTimeout(killer); if (e && e.name === 'AbortError') { since = -1; continue; } helperLive = false; since = -1; await new Promise(r => setTimeout(r, 2000)); }
     }
   })();
+  // and the helper is reminded every 2 s whether Launchpad is really open, so the two can never disagree for long
+  if (IN_LIVELY && !window.OVERLAY) setInterval(() => fastState(open ? 1 : 0), 2000);
 
   // the power menu closes on any press that isn't on it or its button (before anything else gets the press)
   document.addEventListener('pointerdown', e => { if (!e.target.closest('#lpPwr,#lpPwrMenu')) $('lpPwrZone').classList.remove('menu'); }, true);

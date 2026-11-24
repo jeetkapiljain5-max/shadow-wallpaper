@@ -11,7 +11,7 @@ Runs on [Lively Wallpaper](https://www.rocksdanister.com/lively/) (installed for
 | ![Now Playing: a song](docs/song.jpg) | ![Now Playing: a music video](docs/video.jpg) |
 | **Now Playing** — the cover, time-synced lyrics, stripes lit in the cover's colour | **Music videos** — the video itself, in step with the music |
 | ![Search answers](docs/search.jpg) | |
-| **Search** — answers right in Launchpad (`200 aed in inr`) | |
+| **Search** — answers right in Launchpad (`wiki black hole`) | |
 
 ## Install
 

@@ -2,7 +2,7 @@
 ; Per-user install (no admin), silent-friendly for winget: /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
 ; A silent install only puts the files in place (nothing is started); the wallpaper is set up the first time you open
 ; Shadow Wallpaper from Start - or at your next sign-in. The normal installer offers to set it up on its last page.
-#define AppVer "1.0.2"
+#define AppVer "1.0.3"
 #ifndef Publisher
   #define Publisher "Shadow Wallpaper"
 #endif

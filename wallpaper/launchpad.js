@@ -2004,33 +2004,65 @@
       .forEach(([pos, df]) => out.push({ ic: 'text', t: df.definition, s: [pos, df.example && `“${df.example}”`].filter(Boolean).join('  ·  '), copy: df.definition, pr: 3, wrapT: true }));
     return out;
   }
-  function wiki(q) {
-    const m = q.match(/^(?:wiki|wikipedia|w|who is|who was|what is|what are|what was|tell me about)\s+(.+)$/); if (!m) return null;
-    const term = m[1].replace(/[?.!]$/, '').trim(); if (!term || /^[\d\s+\-*/^().x]+$/.test(term)) return null;
-    const isWiki = /^(wiki|wikipedia|w)\s/.test(q);
-    const open_ = () => { call('web', { q: term, e: 'wiki' }); hide(); };
-    const e = look('wiki:' + term, async () => {
-      // the summary (title, picture, description) and the whole article, fetched side by side
-      const fullP = getJ(`https://en.wikipedia.org/w/api.php?action=query&prop=extracts&explaintext=1&redirects=1&format=json&origin=*&titles=${encodeURIComponent(term)}`).catch(() => null);
-      const j = await getJ('https://en.wikipedia.org/api/rest_v1/page/summary/' + encodeURIComponent(term.replace(/ /g, '_')) + '?redirect=true').catch(() => null);
-      if (j && j.extract && j.type !== 'disambiguation') {
-        (async () => {                                                  // the summary shows straight away; the rest of the article fills in when it arrives
-          let x = await fullP, pg = x && Object.values(x.query?.pages || {})[0];
-          if (!pg?.extract || pg.title !== j.title) {                    // a different spelling or capitals: ask again by the summary's own title
-            x = await getJ(`https://en.wikipedia.org/w/api.php?action=query&prop=extracts&explaintext=1&redirects=1&format=json&origin=*&titles=${encodeURIComponent(j.title)}`); pg = x && Object.values(x.query?.pages || {})[0];
-          }
-          if (pg?.extract && pg.extract.length > j.extract.length) { j.full = pg.extract; if (open && search.value) onQuery(); }
-        })().catch(() => {});
-        return j;
-      }
-      // not found: ask Wikipedia's own search what was meant
-      const s2 = await getJ(`https://en.wikipedia.org/w/api.php?action=query&list=search&srinfo=suggestion&srlimit=1&format=json&origin=*&srsearch=${encodeURIComponent(term)}`).catch(() => null);
-      const fix = s2?.query?.searchinfo?.suggestion || s2?.query?.search?.[0]?.title;
-      return fix && fix.toLowerCase() !== term.toLowerCase() ? { miss: true, fix } : null;
+  // Wikipedia: the exact article if there is one; otherwise Wikipedia's own search on the words that matter, skipping
+  // disambiguation pages, and the result whose title best matches what you typed ("who invented the telephone" ->
+  // Invention of the telephone, "mercury" -> Mercury (planet), "taj mahal agra" -> Taj Mahal)
+  const WIKI_STOP = new Set('a an the of in on at to for from by with and or is are was were be been who what whats when where which why how does do did whom whose about tell me explain history please define meaning'.split(' '));
+  const wikiWords = t => (t.toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '').match(/[\p{L}\p{N}]+/gu) || []).filter(w => !WIKI_STOP.has(w));
+  const wordsMeet = (a, b) => a === b || (a.length >= 4 && b.length >= 4 && (a.startsWith(b.slice(0, Math.max(4, b.length - 3))) || b.startsWith(a.slice(0, Math.max(4, a.length - 3)))));
+  function wikiLang(t) {                                               // the Wikipedia in the language you typed in
+    return /[\u0900-\u097F]/.test(t) ? 'hi' : /[\u0980-\u09FF]/.test(t) ? 'bn' : /[\u0B80-\u0BFF]/.test(t) ? 'ta' : /[\u0C00-\u0C7F]/.test(t) ? 'te' : /[\u0A80-\u0AFF]/.test(t) ? 'gu' :
+      /[\u0A00-\u0A7F]/.test(t) ? 'pa' : /[\u0600-\u06FF]/.test(t) ? 'ar' : /[\u3040-\u30FF]/.test(t) ? 'ja' : /[\uAC00-\uD7AF]/.test(t) ? 'ko' : /[\u4E00-\u9FFF]/.test(t) ? 'zh' : /[\u0400-\u04FF]/.test(t) ? 'ru' : 'en';
+  }
+  function wikiPick(pages, term) {                                     // the best-matching, non-disambiguation result
+    const K = wikiWords(term); let best = null;
+    pages.filter(pg => !pg.pageprops || !('disambiguation' in pg.pageprops)).forEach(pg => {
+      const T = wikiWords(pg.title.replace(/\s*\(.*\)\s*$/, '')), hit = K.filter(k => T.some(t => wordsMeet(k, t))).length;
+      const cover = K.length ? hit / K.length : 0, prec = T.length ? T.filter(t => K.some(k => wordsMeet(k, t))).length / T.length : 0;
+      const sc = 2 * cover + prec - pg.index * .09 - (/^(List|Lists|Index|Outline|Timeline) of /.test(pg.title) ? .6 : 0);
+      if (cover >= (K.length >= 3 ? .5 : 1) && prec >= .75 && (!best || sc > best.sc)) best = { title: pg.title, sc, cover };   // a clear match (its title adds nothing you didn't ask about), or none
     });
-    if (e.state === 'load') return isWiki ? [{ ic: 'wiki', t: term, s: 'Reading Wikipedia…', cls: 'load', pr: 2.5, hero: true, run: open_ }] : null;
-    if (e.state === 'ok' && e.data.miss) return isWiki ? [didYouMean(e.data.fix, q.slice(0, q.length - term.length)), { ic: 'wiki', t: `Search Wikipedia for “${term}”`, s: 'en.wikipedia.org', key: 'Search', pr: 2.5, run: open_ }] : null;
-    if (e.state !== 'ok') return isWiki ? [{ ic: 'wiki', t: `Search Wikipedia for “${term}”`, s: 'en.wikipedia.org', key: 'Search', pr: 2.5, run: open_ }] : null;
+    return best;
+  }
+  function wiki(q) {
+    const m = q.match(/^(?:wiki|wikipedia|w|who is|who's|whos|who was|who are|who were|what is|what's|whats|what are|what was|what were|tell me about)\s+(.+)$/); if (!m) return null;
+    const term = m[1].replace(/[?.!]+$/, '').replace(/^(?:the|a|an)\s+/, '').trim(); if (!term || /^[\d\s+\-*/^().x]+$/.test(term)) return null;
+    const isWiki = /^(wiki|wikipedia|w)\s/.test(q), lang = wikiLang(term), W = `https://${lang}.wikipedia.org`;
+    const open_ = (t = term) => { if (lang === 'en') call('web', { q: t, e: 'wiki' }); else call('web', { q: t + ' wikipedia' }); hide(); };
+    const e = look('wiki:' + lang + ':' + term.toLowerCase(), async () => {
+      // one quick request each for the exact title and for the search, side by side; each brings the title, description, intro and picture
+      const PROPS = 'prop=pageprops|description|pageimages|extracts&ppprop=disambiguation&exintro=1&explaintext=1&exlimit=20&piprop=thumbnail&pithumbsize=640&redirects=1&format=json&formatversion=2&origin=*';
+      const pagesOf = x => (x?.query?.pages || []).filter(pg => !pg.missing && !pg.invalid);
+      const words = wikiWords(term), sq = words.length >= 2 && words.length < term.split(/\s+/).length ? words.join(' ') : term;   // a sentence: just the words that matter
+      const find = t => getJ(`${W}/w/api.php?action=query&generator=search&gsrlimit=8&gsrsearch=${encodeURIComponent(t)}&${PROPS}`).then(x => pagesOf(x).sort((a, b) => a.index - b.index)).catch(() => []);
+      const exactP = getJ(`${W}/w/api.php?action=query&titles=${encodeURIComponent(term)}&${PROPS}`).then(x => pagesOf(x)[0]).catch(() => null), foundP = find(sq);
+      const isDis = pg => pg.pageprops && 'disambiguation' in pg.pageprops;
+      let pg = await exactP; if (pg && (isDis(pg) || !pg.extract)) pg = null;
+      if (!pg) {
+        let pages = await foundP;
+        if (!pages.length && sq !== term) pages = await find(term);
+        if (!pages.length) {                                           // nothing at all: Wikipedia's spelling suggestion
+          const s2 = await getJ(`${W}/w/api.php?action=query&list=search&srinfo=suggestion&srlimit=1&format=json&origin=*&srsearch=${encodeURIComponent(term)}`).catch(() => null);
+          const fix = s2?.query?.searchinfo?.suggestion;
+          return fix && fix.toLowerCase() !== term.toLowerCase() ? { miss: true, fix } : null;
+        }
+        const best = wikiPick(pages, term);
+        if (!best) return isWiki ? { list: pages.filter(x => !isDis(x)).slice(0, 4) } : null;
+        pg = pages.find(x => x.title === best.title); if (!pg?.extract) return null;
+      }
+      const j = { title: pg.title, description: pg.description || '', extract: pg.extract, thumbnail: pg.thumbnail ? { source: pg.thumbnail.source } : null };
+      (async () => {                                                    // the intro shows straight away; the rest of the article fills in when it arrives
+        const x = await getJ(`${W}/w/api.php?action=query&prop=extracts&explaintext=1&redirects=1&format=json&formatversion=2&origin=*&titles=${encodeURIComponent(j.title)}`);
+        const f = x?.query?.pages?.[0]?.extract;
+        if (f && f.length > j.extract.length) { j.full = f; if (open && search.value) onQuery(); }
+      })().catch(() => {});
+      return j;
+    });
+    if (e.state === 'load') return isWiki ? [{ ic: 'wiki', t: term, s: 'Reading Wikipedia…', cls: 'load', pr: 2.5, hero: true, run: () => open_() }] : null;
+    if (e.state === 'ok' && e.data.miss) return isWiki ? [didYouMean(e.data.fix, q.slice(0, q.length - m[1].length)), { ic: 'wiki', t: `Search Wikipedia for “${term}”`, s: lang + '.wikipedia.org', key: 'Search', pr: 2.5, run: () => open_() }] : null;
+    if (e.state !== 'ok') return isWiki ? [{ ic: 'wiki', t: `Search Wikipedia for “${term}”`, s: lang + '.wikipedia.org', key: 'Search', pr: 2.5, run: () => open_() }] : null;
+    if (e.data.list) return isWiki ? [...e.data.list.map(pg => ({ ic: 'wiki', t: pg.title, s: pg.description || 'Wikipedia', key: 'Open', pr: 2.4, run: () => open_(pg.title) })),   // no one clear article: the likely ones, as rows
+      { ic: 'search', t: `Search Wikipedia for “${term}”`, s: lang + '.wikipedia.org', key: 'Search', pr: 2.3, run: () => open_() }] : null;
     const d = e.data, full = (d.full || d.extract || '').trim();
     let text = full;
     {                                                                   // the article up to its reference sections; section titles kept as headings
@@ -2039,7 +2071,7 @@
     }
     const lim = 9000;
     let body = text.length > lim ? text.slice(0, lim).replace(/[^.!?]*$/, '') : text;               // end on a whole sentence
-    return [{ ic: 'wiki', t: d.title, s: d.description || 'Wikipedia', key: 'Read', pr: isWiki ? 3 : 1.8, hero: true, heroSmall: true, copy: null, run: open_,
+    return [{ ic: 'wiki', t: d.title, s: d.description || 'Wikipedia', key: 'Read', pr: isWiki ? 3 : 1.8, hero: true, heroSmall: true, copy: null, run: () => open_(d.title),
       big: { paras: body.split(/\n+/).filter(Boolean), img: d.thumbnail?.source || null } }];
   }
   const WMO = c => c === 0 ? ['Clear', 'sun'] : c <= 2 ? ['Partly cloudy', 'sun'] : c === 3 ? ['Overcast', 'cloud'] : c <= 48 ? ['Fog', 'cloud'] : c <= 57 ? ['Drizzle', 'rain'] : c <= 67 ? ['Rain', 'rain'] :

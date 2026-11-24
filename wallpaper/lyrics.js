@@ -1055,7 +1055,10 @@
     }
     if (!musicMode) return;
     const now = Date.now();
-    if (!m || !m.title) { if (!lostAt) lostAt = now; if (now - lostAt > 9000 && !pendingMin) exitMusic(); return; }
+    if (!m || !m.title) {                                               // the player is gone (closed): the video stops at once, the clock after 4 s
+      if (!lostAt) { lostAt = now; if (vid && vid.el) { const [t] = lastFrameAt(); try { vid.el.contentWindow.postMessage({ cmd: 'sync', pos: t, playing: false }, '*'); } catch (_) {} wasPlaying = false; } artBox.classList.add('paused'); }
+      if (now - lostAt > 4000 && !pendingMin) exitMusic(); return;
+    }
     lostAt = 0;
     // YouTube Music started playing what you picked: tuck its window away so the wallpaper shows
     const id = (m.artist + '|' + m.title).toLowerCase();

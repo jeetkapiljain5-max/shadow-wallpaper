@@ -98,6 +98,7 @@ function Pick-Session {
     $all = @($media.GetSessions()); if (-not $all.Count) { $script:shownSession = $null; return $null }
     $playing = @($all | Where-Object { [string]$_.GetPlaybackInfo().PlaybackStatus -eq 'Playing' })
     $s = $playing | Where-Object { [string]$_.SourceAppUserModelId -match $musicApps } | Select-Object -First 1
+    if (-not $s) { $s = $playing | Select-Object -First 1 }                      # anything that is playing beats a paused music app (Spotify in a browser is just 'Chrome')
     if (-not $s -and $script:lastAumid -match $musicApps) { $s = $all | Where-Object { [string]$_.SourceAppUserModelId -eq $script:lastAumid } | Select-Object -First 1 }
     if (-not $s) { $s = $playing | Select-Object -First 1 }
     if (-not $s -and $script:lastAumid -match $musicApps) { $script:shownSession = $null; return $null }   # the music app is between tracks: not some paused tab instead
